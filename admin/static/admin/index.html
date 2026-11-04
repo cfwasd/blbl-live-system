@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>大肥鱼 AI 虚拟主播管理中枢</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    body { background-color: #0f172a; color: #f8fafc; font-family: system-ui, -apple-system, sans-serif; }
+    .glass-card { background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+  </style>
+</head>
+<body class="p-6">
+  <div id="app" class="max-w-7xl mx-auto space-y-6">
+    <!-- 顶栏标题与 OBS 推流控制 -->
+    <header class="glass-card rounded-2xl p-6 flex flex-wrap justify-between items-center gap-4">
+      <div>
+        <h1 class="text-2xl font-bold bg-gradient-to-r from-cyan-400 via-sky-300 to-fuchsia-500 bg-clip-text text-transparent">
+          🐟 大肥鱼 AI 主播管理控制台 (Gemini娘)
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">单一 SSE 长连接 | 火山豆包语音 (V3) | 弹幕指令互动 | 实时配置热推</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium"
+              :class="obsStatus.streaming ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-700 text-slate-300'">
+          <span class="w-2 h-2 rounded-full" :class="obsStatus.streaming ? 'bg-emerald-400 animate-pulse' : 'bg-slate-400'"></span>
+          {{ obsStatus.streaming ? 'OBS 推流中' : (obsStatus.connected ? 'OBS 已连接待机' : 'OBS 未运行') }}
+        </span>
+        <button @click="toggleStream" class="px-4 py-2 rounded-xl text-sm font-semibold transition"
+                :class="obsStatus.streaming ? 'bg-rose-500 hover:bg-rose-600' : 'bg-cyan-500 hover:bg-cyan-600'">
+          {{ obsStatus.streaming ? '一键下播' : '一键开播' }}
+        </button>
+      </div>
+    </header>
+
+    <!-- 核心板块网格 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <!-- 板块 1: AI Prompt 与大脑 -->
+      <section class="glass-card rounded-2xl p-6 space-y-4">
+        <h2 class="text-lg font-bold text-cyan-300 flex items-center gap-2">🧠 AI 大脑 (OpenAI 兼容)</h2>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Base URL</label>
+          <input v-model="config.llm.base_url" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-cyan-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">API Key</label>
+          <input type="password" v-model="config.llm.api_key" placeholder="sk-..." class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-cyan-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Model Name</label>
+          <input v-model="config.llm.model" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-cyan-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">System Prompt (Gemini娘人设)</label>
+          <textarea v-model="config.llm.system_prompt" rows="3" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-cyan-400 focus:outline-none"></textarea>
+        </div>
+        <button @click="saveConfig" class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition">保存大脑设置</button>
+      </section>
+
+      <!-- 板块 2: 火山豆包 V3 语音 -->
+      <section class="glass-card rounded-2xl p-6 space-y-4">
+        <h2 class="text-lg font-bold text-fuchsia-300 flex items-center gap-2">🗣️ 火山豆包语音 (V3 HTTP)</h2>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">X-Api-Key</label>
+          <input type="password" v-model="config.volc_tts.api_key" placeholder="火山控制台获取" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-fuchsia-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Resource ID</label>
+          <input v-model="config.volc_tts.resource_id" placeholder="seed-tts-2.0" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-fuchsia-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Speaker 音色 ID</label>
+          <input v-model="config.volc_tts.speaker" placeholder="zh_female_vv_uranus_bigtts" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-fuchsia-400 focus:outline-none">
+        </div>
+        <div class="space-y-2">
+          <label class="block text-xs text-slate-400">在线试听测试</label>
+          <div class="flex gap-2">
+            <input v-model="testTTSContent" placeholder="输入测试台词" class="flex-1 bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-xs focus:border-fuchsia-400 focus:outline-none">
+            <button @click="testTTS" class="px-3 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-xs font-semibold transition">在线试听</button>
+          </div>
+        </div>
+        <button @click="saveConfig" class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition">保存语音设置</button>
+      </section>
+
+      <!-- 板块 3: 舞台视觉与热推 -->
+      <section class="glass-card rounded-2xl p-6 space-y-4">
+        <h2 class="text-lg font-bold text-amber-300 flex items-center gap-2">🎭 舞台视觉实时热推</h2>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">立绘缩放 ({{ config.mascot.scale }})</label>
+          <input type="range" min="0.1" max="1.0" step="0.05" v-model.number="config.mascot.scale" @input="saveConfig" class="w-full">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">主题风格</label>
+          <select v-model="config.mascot.theme" @change="saveConfig" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm">
+            <option value="transparent">OBS 纯透明通道</option>
+            <option value="deep_sea">赛博深海幻想</option>
+          </select>
+        </div>
+        <div>
+          <h3 class="text-xs font-semibold text-slate-400 mb-1">房管紧急插播</h3>
+          <div class="flex gap-2">
+            <input v-model="speakText" placeholder="直接插话朗读并同步大屏" class="flex-1 bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-xs focus:border-amber-400 focus:outline-none">
+            <button @click="manualSpeak" class="px-3 py-2 bg-amber-600 hover:bg-amber-500 rounded-lg text-xs font-semibold transition">插播</button>
+          </div>
+        </div>
+        <div>
+          <h3 class="text-xs font-semibold text-slate-400 mb-1">开播前弹幕模拟器</h3>
+          <div class="flex gap-2">
+            <input v-model="mockDanmuText" placeholder="模拟弹幕 (如: 切歌 / 点歌 告白气球)" class="flex-1 bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-xs focus:border-cyan-400 focus:outline-none">
+            <button @click="sendMockDanmu" class="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-xs font-semibold transition">发送</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 底部板块: 违禁词管理与 B站房间号 -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section class="glass-card rounded-2xl p-6 space-y-4">
+        <h2 class="text-lg font-bold text-rose-300 flex items-center gap-2">🛡️ Aho-Corasick 敏感词库</h2>
+        <textarea v-model="bannedWordsText" rows="4" placeholder="每行一个敏感词" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-rose-400 focus:outline-none"></textarea>
+        <button @click="saveBannedWords" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 rounded-lg text-xs font-semibold transition">保存违禁词库</button>
+      </section>
+
+      <section class="glass-card rounded-2xl p-6 space-y-4">
+        <h2 class="text-lg font-bold text-sky-300 flex items-center gap-2">📡 B站直播间与伴奏设置</h2>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">B站直播间号 (长号或短号)</label>
+          <input v-model.number="config.bilibili.room_id" class="w-full bg-slate-900/80 border border-slate-700 rounded-lg p-2 text-sm focus:border-sky-400 focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">伴奏默认音量 ({{ config.bgm.default_volume }})</label>
+          <input type="range" min="0" max="1" step="0.05" v-model.number="config.bgm.default_volume" @input="saveConfig" class="w-full">
+        </div>
+        <button @click="saveConfig" class="px-4 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-xs font-semibold transition">保存基本配置</button>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+    createApp({
+      setup() {
+        const config = ref({
+          server: {}, bilibili: {}, llm: {}, volc_tts: {}, obs: {}, mascot: {}, bgm: {}
+        });
+        const obsStatus = ref({ connected: false, streaming: false });
+        const testTTSContent = ref("笨蛋观众，这是火山豆包试听音频哦！");
+        const speakText = ref("");
+        const mockDanmuText = ref("切歌");
+        const bannedWordsText = ref("");
+
+        const fetchConfig = async () => {
+          try {
+            const res = await fetch('/api/config');
+            config.value = await res.json();
+          } catch(e) { console.error(e); }
+        };
+
+        const fetchOBS = async () => {
+          try {
+            const res = await fetch('/api/live/status');
+            obsStatus.value = await res.json();
+          } catch(e) { console.error(e); }
+        };
+
+        const fetchBannedWords = async () => {
+          try {
+            const res = await fetch('/api/banned-words');
+            const data = await res.json();
+            bannedWordsText.value = (data.words || []).join('\n');
+          } catch(e) { console.error(e); }
+        };
+
+        const saveConfig = async () => {
+          await fetch('/api/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(config.value)
+          });
+        };
+
+        const saveBannedWords = async () => {
+          const words = bannedWordsText.value.split('\n').map(w => w.trim()).filter(Boolean);
+          await fetch('/api/banned-words', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words })
+          });
+          alert('违禁词已更新并持久化！');
+        };
+
+        const toggleStream = async () => {
+          const endpoint = obsStatus.value.streaming ? '/api/live/stop' : '/api/live/start';
+          await fetch(endpoint, { method: 'POST' });
+          await fetchOBS();
+        };
+
+        const testTTS = async () => {
+          await fetch('/api/broadcast/speak', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: testTTSContent.value })
+          });
+          alert('已触发火山试听合成请求，可在直播大屏听到发音！');
+        };
+
+        const manualSpeak = async () => {
+          if (!speakText.value) return;
+          await fetch('/api/broadcast/speak', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: speakText.value })
+          });
+          speakText.value = '';
+        };
+
+        const sendMockDanmu = async () => {
+          if (!mockDanmuText.value) return;
+          await fetch('/api/test/danmu', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uname: '测试观众', content: mockDanmuText.value })
+          });
+        };
+
+        onMounted(() => {
+          fetchConfig();
+          fetchOBS();
+          fetchBannedWords();
+          setInterval(fetchOBS, 5000);
+        });
+
+        return {
+          config, obsStatus, testTTSContent, speakText, mockDanmuText, bannedWordsText,
+          saveConfig, saveBannedWords, toggleStream, testTTS, manualSpeak, sendMockDanmu
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
