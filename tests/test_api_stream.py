@@ -29,3 +29,13 @@ def test_api_banned_words_crud():
 
         get_res = client.get("/api/banned-words")
         assert "新词1" in get_res.json()["words"]
+
+def test_api_logs_and_bili_status():
+    with TestClient(app) as client:
+        res = client.get("/api/logs")
+        assert res.status_code == 200
+        assert "logs" in res.json()
+
+        bili_res = client.get("/api/bili/status")
+        assert bili_res.status_code == 200
+        assert "is_running" in bili_res.json()

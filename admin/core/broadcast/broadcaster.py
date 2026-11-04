@@ -1,6 +1,6 @@
 import asyncio
 import time
-from collections import Counter
+from collections import Counter, deque
 from typing import Set, Tuple, Any, Dict, List
 
 class Broadcaster:
@@ -12,6 +12,7 @@ class Broadcaster:
         self.ai_reply_count: int = 0
         self.blocked_count: int = 0
         self.start_time: float = time.time()
+        self.logs: deque = deque(maxlen=200)
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=100)
@@ -35,6 +36,20 @@ class Broadcaster:
                     dead_queues.append(q)
         for dq in dead_queues:
             self.clients.discard(dq)
+
+    async def log(self, level: str, tag: str, message: str):
+        now_str = time.strftime("%H:%M:%S")
+        log_entry = {
+            "time": now_str,
+            "level": level.upper(),
+            "tag": tag,
+            "message": message
+        }
+        self.logs.append(log_entry)
+        await self.broadcast("log", log_entry)
+
+    def get_recent_logs(self) -> List[Dict[str, str]]:
+        return list(self.logs)
 
     def record_danmu(self, uname: str):
         self.danmu_count += 1

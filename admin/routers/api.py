@@ -1,5 +1,5 @@
 import os
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 from admin.config import AppConfig, save_config, get_config
@@ -18,6 +18,9 @@ class DanmuTestRequest(BaseModel):
 class BannedWordsRequest(BaseModel):
     words: List[str]
 
+class BiliConnectRequest(BaseModel):
+    room_id: Optional[int] = None
+
 @router.get("/api/config")
 def get_current_config():
     return get_config()
@@ -25,8 +28,9 @@ def get_current_config():
 @router.post("/api/config")
 async def update_config(new_config: AppConfig, request: Request):
     save_config(new_config)
-    # 触发配置热同步广播到直播大屏
     broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "CONFIG", "后台配置已更新并持久化至 config.yaml")
+    # 触发配置热同步广播到直播大屏
     await broadcaster.broadcast("config_sync", {
         "theme": new_config.mascot.theme,
         "mascot": {
@@ -40,10 +44,41 @@ async def update_config(new_config: AppConfig, request: Request):
     })
     return {"status": "ok"}
 
+@router.get("/api/logs")
+def get_logs(request: Request):
+    broadcaster = request.app.state.broadcaster
+    return {"logs": broadcaster.get_recent_logs()}
+
+@router.get("/api/bili/status")
+def get_bili_status(request: Request):
+    bili = request.app.state.bili_client
+    return bili.get_status()
+
+@router.post("/api/bili/test")
+async def test_bili_room(req: BiliConnectRequest, request: Request):
+    bili = request.app.state.bili_client
+    target_id = req.room_id or bili.raw_room_id
+    info = await bili.fetch_room_details(target_id)
+    return {"status": "ok", "info": info}
+
+@router.post("/api/bili/connect")
+async def connect_bili_room(req: BiliConnectRequest, request: Request):
+    bili = request.app.state.bili_client
+    target_id = req.room_id or bili.raw_room_id
+    success = await bili.start(target_id)
+    return {"status": "ok" if success else "failed", "details": bili.get_status()}
+
+@router.post("/api/bili/disconnect")
+async def disconnect_bili_room(request: Request):
+    bili = request.app.state.bili_client
+    await bili.stop()
+    return {"status": "ok"}
+
 @router.post("/api/broadcast/speak")
 async def manual_speak(req: SpeakRequest, request: Request):
     orchestrator = request.app.state.orchestrator
     broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "SPEAK", f"房管发起插播: {req.text}")
     audio_b64 = await orchestrator.tts.synthesize_base64_audio(req.text)
     payload = {
         "id": "manual",
@@ -67,21 +102,27 @@ def get_banned_words(request: Request):
     return {"words": pipeline.filter.words}
 
 @router.post("/api/banned-words")
-def update_banned_words(req: BannedWordsRequest, request: Request):
+async def update_banned_words(req: BannedWordsRequest, request: Request):
     pipeline = request.app.state.pipeline
     pipeline.filter.update_words(req.words)
+    broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "CONFIG", f"敏感词库已更新，词条数: {len(pipeline.filter.words)}")
     return {"status": "ok", "count": len(pipeline.filter.words)}
 
 @router.post("/api/live/start")
-def live_start(request: Request):
+async def live_start(request: Request):
     obs = request.app.state.obs_client
     success = obs.start_streaming()
+    broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "OBS", f"发送开播指令，结果: {'成功' if success else '失败'}")
     return {"status": "ok" if success else "failed"}
 
 @router.post("/api/live/stop")
-def live_stop(request: Request):
+async def live_stop(request: Request):
     obs = request.app.state.obs_client
     success = obs.stop_streaming()
+    broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "OBS", f"发送下播指令，结果: {'成功' if success else '失败'}")
     return {"status": "ok" if success else "failed"}
 
 @router.get("/api/live/status")

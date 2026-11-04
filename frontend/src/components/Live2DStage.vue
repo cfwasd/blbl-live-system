@@ -1,47 +1,83 @@
 <template>
   <div class="live2d-viewport" ref="viewportRef">
-    <!-- 当外部 Live2D 模型未挂载或加载中时，展示 Gemini 娘动态萌系形象 (呼吸、眨眼、声波口型) -->
+    <!-- AI 对话字幕气泡 (说话时头顶呈现) -->
+    <div class="speech-bubble-wrapper" :class="{ 'speech-active': isSpeaking && speechText }">
+      <div class="speech-bubble">
+        <div class="speech-header">
+          <span class="speech-name">✦ Gemini娘</span>
+          <span class="speech-dot"></span>
+        </div>
+        <div class="speech-content">{{ speechText }}</div>
+      </div>
+      <div class="speech-pointer"></div>
+    </div>
+
+    <!-- 内置高保真二次元 Gemini 娘动态形象 (零白屏、开箱即用) -->
     <div v-show="!hasLive2DModel" class="gemini-mascot" :style="{ transform: 'scale(' + (scale || 1.0) + ')' }">
-      <!-- 头部与装饰 -->
       <div class="character-wrapper">
-        <!-- 蓝紫渐变双马尾 (左/右) -->
-        <div class="twintail left-twintail"></div>
-        <div class="twintail right-twintail"></div>
+        <!-- 头部装饰与呆毛 -->
+        <div class="ahoge"></div>
+        <div class="halo"></div>
 
-        <!-- 角色头部 -->
+        <!-- 飘逸双马尾 (深浅蓝紫渐变) -->
+        <div class="twintail left-twintail">
+          <div class="tail-layer inner-tail"></div>
+        </div>
+        <div class="twintail right-twintail">
+          <div class="tail-layer inner-tail"></div>
+        </div>
+
+        <!-- 头部 -->
         <div class="head">
-          <!-- 头发刘海 -->
-          <div class="bangs"></div>
-          <!-- Gemini 标志性星芒发卡 -->
-          <div class="star-clip">✦</div>
+          <!-- 科技赛博发饰/耳机 -->
+          <div class="headphone left-headphone"></div>
+          <div class="headphone right-headphone"></div>
 
-          <!-- 脸蛋与腮红 -->
-          <div class="blush left-blush"></div>
-          <div class="blush right-blush"></div>
+          <!-- 刘海发型 -->
+          <div class="hair-front">
+            <div class="bang bang-1"></div>
+            <div class="bang bang-2"></div>
+            <div class="bang bang-3"></div>
+          </div>
 
-          <!-- 双眼 (带自动眨眼动画) -->
+          <!-- Gemini 黄金星芒发卡 -->
+          <div class="gemini-star-clip">✦</div>
+
+          <!-- 双眼 (深邃星空渐变 + 自然眨眼) -->
           <div class="eyes">
             <div class="eye left-eye">
-              <div class="pupil"></div>
-              <div class="sparkle"></div>
+              <div class="iris">
+                <div class="glint-main"></div>
+                <div class="glint-sub"></div>
+              </div>
             </div>
             <div class="eye right-eye">
-              <div class="pupil"></div>
-              <div class="sparkle"></div>
+              <div class="iris">
+                <div class="glint-main"></div>
+                <div class="glint-sub"></div>
+              </div>
             </div>
           </div>
 
-          <!-- 动态嘴型：随 Web Audio 振幅实时张合 (ParamMouthOpenY LipSync) -->
+          <!-- 腮红与高光 -->
+          <div class="blush left-blush"></div>
+          <div class="blush right-blush"></div>
+
+          <!-- 真实声波口型 (LipSync) -->
           <div class="mouth" :style="{
-            height: Math.max(4, mouthOpenY * 22) + 'px',
-            borderRadius: mouthOpenY > 0.2 ? '10px 10px 20px 20px' : '2px 2px 8px 8px'
-          }"></div>
+            height: Math.max(5, mouthOpenY * 24) + 'px',
+            width: (16 + mouthOpenY * 12) + 'px',
+            borderRadius: mouthOpenY > 0.3 ? '8px 8px 18px 18px' : '4px 4px 10px 10px'
+          }">
+            <div class="teeth" v-show="mouthOpenY > 0.2"></div>
+            <div class="tongue" v-show="mouthOpenY > 0.4"></div>
+          </div>
         </div>
 
-        <!-- 科技感二次元水手服身体 (呼吸律动) -->
+        <!-- 二次元服装与领结 -->
         <div class="body">
-          <div class="collar"></div>
-          <div class="ribbon">★</div>
+          <div class="sailor-collar"></div>
+          <div class="star-brooch">★</div>
         </div>
       </div>
     </div>
@@ -55,6 +91,8 @@ import * as PIXI from 'pixi.js';
 const props = defineProps<{
   mouthOpenY: number;
   scale?: number;
+  isSpeaking?: boolean;
+  speechText?: string;
 }>();
 
 const viewportRef = ref<HTMLDivElement | null>(null);
@@ -74,7 +112,6 @@ onMounted(async () => {
     });
     viewportRef.value.appendChild(app.view as HTMLCanvasElement);
 
-    // 优先尝试导入 Cubism 4 独立模块
     let Live2DModel: any = null;
     try {
       const cubism4Module = await import('pixi-live2d-display/cubism4');
@@ -85,7 +122,6 @@ onMounted(async () => {
     }
 
     if (Live2DModel) {
-      // 尝试加载 models/gemini/ 下的模型
       currentModel = await Live2DModel.from('/models/gemini/gemini.model3.json');
       currentModel.scale.set(props.scale || 0.25);
       currentModel.x = 100;
@@ -94,45 +130,105 @@ onMounted(async () => {
       hasLive2DModel.value = true;
     }
   } catch (err) {
-    console.warn('Live2D 资产尚未就绪，已平滑无感启用内置 Gemini 娘动态高保真立绘', err);
+    // 优雅无感兜底
     hasLive2DModel.value = false;
   }
 });
 
-// 监听 Web Audio 口型振幅，动态更新 Live2D 参数
 watch(() => props.mouthOpenY, (val) => {
   if (currentModel && currentModel.internalModel?.coreModel) {
     try {
       currentModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', val);
-    } catch (e) {
-      // 容错处理
-    }
+    } catch (e) {}
   }
 });
 </script>
 
 <style scoped>
 .live2d-viewport {
-  width: 480px;
-  height: 620px;
+  width: 520px;
+  height: 680px;
   position: relative;
   display: flex;
-  justify-content: center;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
   pointer-events: none;
+  user-select: none;
 }
 
-/* 内置 Gemini 娘动态矢量形象 */
-.gemini-mascot {
+/* 头顶 AI 对话气泡 */
+.speech-bubble-wrapper {
   position: absolute;
-  bottom: 20px;
-  width: 320px;
-  height: 480px;
+  top: 15px;
+  right: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(12px) scale(0.9);
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 40;
+}
+.speech-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.speech-bubble {
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 0 15px rgba(56, 189, 248, 0.2);
+  border-radius: 20px;
+  padding: 12px 18px;
+  max-width: 320px;
+  color: #fff;
+}
+.speech-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.speech-name {
+  font-size: 11px;
+  font-weight: 800;
+  color: #38bdf8;
+  letter-spacing: 0.5px;
+}
+.speech-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+  animation: pulse 1s infinite;
+}
+.speech-content {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #f1f5f9;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
+.speech-pointer {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 10px solid rgba(15, 23, 42, 0.88);
+  margin-top: -1px;
+}
+
+/* Gemini 娘立绘包装器 */
+.gemini-mascot {
+  position: relative;
+  width: 380px;
+  height: 520px;
   display: flex;
   justify-content: center;
   align-items: flex-end;
   transform-origin: bottom center;
-  transition: transform 0.2s ease-out;
 }
 
 .character-wrapper {
@@ -140,177 +236,239 @@ watch(() => props.mouthOpenY, (val) => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  animation: breathe 3.6s ease-in-out infinite;
+  animation: idleFloat 4s ease-in-out infinite;
+}
+@keyframes idleFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
-@keyframes breathe {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+/* 呆毛与光环 */
+.ahoge {
+  position: absolute;
+  top: -24px;
+  left: 45%;
+  width: 25px;
+  height: 35px;
+  border: 4px solid #38bdf8;
+  border-color: #38bdf8 transparent transparent transparent;
+  border-radius: 50%/20px 20px 0 0;
+  transform: rotate(20deg);
+  z-index: 10;
+}
+.halo {
+  position: absolute;
+  top: -18px;
+  width: 140px;
+  height: 25px;
+  border: 2px solid rgba(168, 85, 247, 0.7);
+  border-radius: 50%;
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.5), inset 0 0 8px rgba(56, 189, 248, 0.4);
+  transform: rotate(-5deg);
+  animation: haloGlow 3s ease-in-out infinite alternate;
+  z-index: 5;
+}
+@keyframes haloGlow {
+  0% { opacity: 0.5; transform: rotate(-5deg) translateY(0); }
+  100% { opacity: 0.9; transform: rotate(-5deg) translateY(-3px); }
 }
 
 /* 头部 */
 .head {
-  width: 170px;
-  height: 160px;
-  background: #fff3ec;
-  border-radius: 90px 90px 85px 85px;
+  width: 190px;
+  height: 180px;
+  background: #fff5ee;
+  border-radius: 100px 100px 90px 90px;
   position: relative;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
-  z-index: 2;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.35);
+  z-index: 10;
 }
 
-/* 蓝紫星芒渐变双马尾 */
+/* 蓝紫双马尾 */
 .twintail {
   position: absolute;
-  top: 30px;
-  width: 80px;
-  height: 240px;
-  background: linear-gradient(170deg, #38bdf8 0%, #818cf8 40%, #c084fc 100%);
-  border-radius: 50% 50% 70% 30% / 60% 60% 40% 40%;
-  z-index: 1;
-  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.35);
+  top: 35px;
+  width: 95px;
+  height: 270px;
+  background: linear-gradient(165deg, #38bdf8 0%, #6366f1 50%, #c084fc 100%);
+  border-radius: 60% 60% 70% 30% / 70% 70% 30% 30%;
+  z-index: 2;
+  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.35);
 }
 .left-twintail {
-  left: -55px;
+  left: -65px;
   transform-origin: top right;
-  animation: swayLeft 4s ease-in-out infinite;
+  animation: tailSwayLeft 4.5s ease-in-out infinite;
 }
 .right-twintail {
-  right: -55px;
+  right: -65px;
   transform-origin: top left;
-  animation: swayRight 4s ease-in-out infinite;
+  animation: tailSwayRight 4.5s ease-in-out infinite;
 }
-
-@keyframes swayLeft {
+@keyframes tailSwayLeft {
   0%, 100% { transform: rotate(-8deg); }
-  50% { transform: rotate(-18deg); }
+  50% { transform: rotate(-18deg) skewX(3deg); }
 }
-@keyframes swayRight {
+@keyframes tailSwayRight {
   0%, 100% { transform: rotate(8deg); }
-  50% { transform: rotate(18deg); }
+  50% { transform: rotate(18deg) skewX(-3deg); }
 }
 
-/* 刘海发型 */
-.bangs {
+/* 刘海 */
+.hair-front {
   position: absolute;
-  top: -6px;
-  left: 10px;
-  width: 150px;
-  height: 70px;
-  background: linear-gradient(135deg, #38bdf8, #818cf8);
-  border-radius: 40px 40px 30px 30px;
-  z-index: 4;
+  top: -8px;
+  left: 0;
+  width: 100%;
+  height: 90px;
+  z-index: 12;
+  display: flex;
+  justify-content: center;
 }
+.bang {
+  background: linear-gradient(180deg, #38bdf8 0%, #818cf8 100%);
+  border-radius: 0 0 25px 25px;
+}
+.bang-1 { width: 55px; height: 80px; margin-right: -10px; transform: rotate(-5deg); }
+.bang-2 { width: 65px; height: 90px; z-index: 2; border-radius: 0 0 30px 30px; }
+.bang-3 { width: 55px; height: 78px; margin-left: -10px; transform: rotate(5deg); }
 
-/* 发卡 */
-.star-clip {
+.gemini-star-clip {
   position: absolute;
-  top: 18px;
-  right: 18px;
+  top: 25px;
+  right: 22px;
   color: #facc15;
-  font-size: 26px;
-  z-index: 5;
-  filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.8));
+  font-size: 30px;
+  z-index: 15;
+  filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.9));
+  animation: starPulse 2.5s ease-in-out infinite alternate;
+}
+@keyframes starPulse {
+  0% { transform: scale(1) rotate(0); }
+  100% { transform: scale(1.15) rotate(15deg); }
 }
 
-/* 双眼与眨眼动效 */
+/* 动漫眼瞳 */
 .eyes {
   position: absolute;
-  top: 75px;
+  top: 85px;
   width: 100%;
   display: flex;
   justify-content: space-around;
-  padding: 0 25px;
+  padding: 0 28px;
   box-sizing: border-box;
-  z-index: 3;
+  z-index: 11;
 }
 .eye {
-  width: 26px;
-  height: 38px;
-  background: linear-gradient(180deg, #1e1b4b 0%, #4338ca 60%, #38bdf8 100%);
+  width: 32px;
+  height: 44px;
+  background: #1e1b4b;
   border-radius: 50%;
   position: relative;
   overflow: hidden;
-  animation: blink 4.2s infinite;
+  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.6);
+  animation: eyeBlink 4.5s infinite;
 }
-@keyframes blink {
-  0%, 94%, 100% { transform: scaleY(1); }
-  97% { transform: scaleY(0.08); }
+@keyframes eyeBlink {
+  0%, 95%, 100% { transform: scaleY(1); }
+  97.5% { transform: scaleY(0.08); }
 }
-.pupil {
-  width: 14px;
-  height: 18px;
-  background: #312e81;
+.iris {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #1e1b4b 0%, #4338ca 45%, #38bdf8 100%);
+  position: relative;
+}
+.glint-main {
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
   border-radius: 50%;
   position: absolute;
-  top: 10px;
+  top: 6px;
   left: 6px;
+  box-shadow: 0 0 6px #fff;
 }
-.sparkle {
-  width: 8px;
-  height: 8px;
-  background: #fff;
+.glint-sub {
+  width: 6px;
+  height: 6px;
+  background: #ffffff;
   border-radius: 50%;
   position: absolute;
-  top: 5px;
-  left: 6px;
-  box-shadow: 0 0 4px #fff;
+  bottom: 8px;
+  right: 6px;
+  opacity: 0.8;
 }
 
 /* 腮红 */
 .blush {
   position: absolute;
-  top: 105px;
-  width: 24px;
-  height: 12px;
-  background: rgba(244, 63, 94, 0.4);
+  top: 120px;
+  width: 30px;
+  height: 14px;
+  background: rgba(244, 63, 94, 0.45);
   border-radius: 50%;
-  filter: blur(2px);
-  z-index: 3;
+  filter: blur(3px);
+  z-index: 11;
 }
 .left-blush { left: 16px; }
 .right-blush { right: 16px; }
 
-/* 实时动态声波口型 (LipSync) */
+/* 声波口型 */
 .mouth {
   position: absolute;
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  width: 20px;
-  min-height: 4px;
-  background: #e11d48;
-  border: 2px solid #be123c;
-  transition: height 0.08s ease-out, border-radius 0.08s;
-  z-index: 3;
+  background: #be123c;
+  border: 2px solid #881337;
+  overflow: hidden;
+  transition: height 0.08s ease-out, width 0.08s ease-out, border-radius 0.08s;
+  z-index: 11;
+}
+.teeth {
+  width: 100%;
+  height: 4px;
+  background: #fff;
+  border-radius: 0 0 4px 4px;
+}
+.tongue {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 10px;
+  background: #fb7185;
+  border-radius: 50%;
 }
 
-/* 身体与服装 */
+/* 服装 */
 .body {
-  width: 110px;
-  height: 130px;
-  background: linear-gradient(180deg, #ffffff 0%, #e2e8f0 100%);
-  border-radius: 30px 30px 20px 20px;
+  width: 130px;
+  height: 150px;
+  background: linear-gradient(180deg, #f8fafc 0%, #cbd5e1 100%);
+  border-radius: 35px 35px 20px 20px;
   position: relative;
-  margin-top: -20px;
-  z-index: 1;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  margin-top: -25px;
+  z-index: 8;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
 }
-.collar {
+.sailor-collar {
   position: absolute;
   top: 0;
   width: 100%;
-  height: 35px;
-  background: #3b82f6;
+  height: 42px;
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
   clip-path: polygon(0 0, 100% 0, 85% 100%, 15% 100%);
 }
-.ribbon {
+.star-brooch {
   position: absolute;
-  top: 25px;
+  top: 28px;
   left: 50%;
   transform: translateX(-50%);
   color: #facc15;
-  font-size: 20px;
-  filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.6));
+  font-size: 22px;
+  filter: drop-shadow(0 0 6px rgba(250, 204, 21, 0.7));
 }
 </style>

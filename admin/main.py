@@ -27,6 +27,7 @@ async def lifespan(app: FastAPI):
         # 1. 弹幕指令检查 (切歌/点歌等)
         cmd = parse_danmu_command(event.content)
         if cmd:
+            await broadcaster.log("INFO", "CMD", f"观众【{event.uname}】触发指令: {cmd.action} {cmd.payload}")
             if cmd.action in ("switch_song", "request_song"):
                 await broadcaster.broadcast("bgm_action", {
                     "action": "switch",
@@ -44,12 +45,14 @@ async def lifespan(app: FastAPI):
         p_res = pipeline.process(event)
         if p_res.is_blocked:
             broadcaster.record_blocked()
+            await broadcaster.log("WARN", "BLOCK", f"敏感词拦截: [{event.uname}] {event.content}")
             return
 
         broadcaster.record_danmu(event.uname)
 
         # 3. 广播弹幕到大屏毛玻璃列表
         if event.is_super_chat:
+            await broadcaster.log("WARN", "SC", f"收到醒目留言 ￥{event.price} [{event.uname}]: {event.content}")
             await broadcaster.broadcast("super_chat", {
                 "id": event.id,
                 "uname": event.uname,
@@ -71,8 +74,14 @@ async def lifespan(app: FastAPI):
 
         # 4. 触发 AI 思考与语音合成
         if p_res.can_trigger_ai:
+            await broadcaster.log("INFO", "AI", f"正在为观众【{event.uname}】的弹幕生成回复...")
             speech = await orchestrator.generate_response(event.uname, event.content)
             broadcaster.record_ai_reply(speech.tokens)
+            await broadcaster.log("INFO", "AI", f"回复台词: {speech.text} (消耗 Token: {speech.tokens})")
+
+            if speech.audio_base64:
+                await broadcaster.log("INFO", "TTS", "火山豆包语音合成完成，下发音频流")
+
             await broadcaster.broadcast("ai_speech", {
                 "id": speech.id,
                 "text": speech.text,
@@ -82,7 +91,7 @@ async def lifespan(app: FastAPI):
             })
             await broadcaster.broadcast("stats", broadcaster.get_current_stats())
 
-    bili_client = BiliClientWrapper(config.bilibili.room_id, handle_incoming_danmu)
+    bili_client = BiliClientWrapper(config.bilibili.room_id, handle_incoming_danmu, broadcaster.log)
 
     # 挂载状态
     app.state.config = config
@@ -92,7 +101,12 @@ async def lifespan(app: FastAPI):
     app.state.obs_client = obs_client
     app.state.bili_client = bili_client
 
+    await broadcaster.log("INFO", "SYSTEM", "虚拟AI主播管理服务已启动")
+
     yield
+
+    if bili_client.is_running:
+        await bili_client.stop()
 
 app = FastAPI(title="Virtual AI Live System", lifespan=lifespan)
 app.add_middleware(

@@ -1,4 +1,4 @@
-import{g as dr,p as cr,f as pr,r as vr}from"./index-8f1b4d1e.js";/*!
+import{g as dr,p as cr,f as pr,r as vr}from"./index-29aed9c2.js";/*!
  * @pixi/constants - v6.5.10
  * Compiled Thu, 06 Jul 2023 15:25:11 UTC
  *
