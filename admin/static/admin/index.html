@@ -15,10 +15,20 @@
     .terminal-scroll::-webkit-scrollbar { width: 6px; }
     .terminal-scroll::-webkit-scrollbar-track { background: #0b0f19; }
     .terminal-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .toast-fade-enter-active, .toast-fade-leave-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+    .toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateX(30px); }
   </style>
 </head>
 <body class="p-6">
   <div id="app" class="max-w-[1600px] mx-auto space-y-6">
+
+    <!-- 全局 Toast 通知 -->
+    <transition name="toast-fade">
+      <div v-if="toast" class="fixed top-6 right-6 z-50 px-5 py-3 rounded-xl text-sm font-bold shadow-2xl border backdrop-blur-xl"
+           :class="toast.type === 'ok' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' : (toast.type === 'error' ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border-amber-500/40')">
+        {{ toast.msg }}
+      </div>
+    </transition>
 
     <!-- 1. 全局系统顶栏与状态指示灯 -->
     <header class="glass-panel rounded-2xl p-6 flex flex-wrap justify-between items-center gap-4">
@@ -201,8 +211,9 @@
             <label class="block text-xs font-semibold text-slate-400">在线真实发音试听测试</label>
             <div class="flex gap-2">
               <input v-model="testTTSContent" placeholder="输入测试台词" class="glass-input flex-1 rounded-xl p-2 text-xs text-slate-200">
-              <button @click="testTTS" class="px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5">
-                <i class="fa-solid fa-volume-high"></i> 在线试听
+              <button @click="testTTS" :disabled="ttsTesting" class="px-4 py-2 bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold shadow-md transition flex items-center gap-1.5">
+                <i class="fa-solid" :class="ttsTesting ? 'fa-spinner fa-spin' : 'fa-volume-high'"></i>
+                {{ ttsTesting ? '合成中...' : '在线试听' }}
               </button>
             </div>
           </div>
@@ -321,6 +332,9 @@
         const autoScroll = ref(true);
         const terminalRef = ref(null);
         const currentFilter = ref('ALL');
+        const ttsTesting = ref(false);
+        const toast = ref(null);
+        let toastTimer = null;
 
         const filterTabs = [
           { id: 'ALL', name: '全部' },
@@ -446,30 +460,78 @@
         };
 
         const testTTS = async () => {
-          await fetch('/api/broadcast/speak', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: testTTSContent.value })
-          });
+          if (!testTTSContent.value.trim()) {
+            showToast('请先输入测试台词', 'warn');
+            return;
+          }
+          ttsTesting.value = true;
+          try {
+            const res = await fetch('/api/test/tts', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: testTTSContent.value,
+                api_key: config.value.volc_tts.api_key,
+                resource_id: config.value.volc_tts.resource_id,
+                speaker: config.value.volc_tts.speaker
+              })
+            });
+            const data = await res.json();
+            if (data.status === 'ok' && data.audio) {
+              const audio = new Audio(data.audio);
+              audio.play().catch(() => {});
+              showToast('试听合成成功，正在播放', 'ok');
+            } else {
+              showToast(data.message || '语音合成失败，请检查配置', 'error');
+            }
+          } catch (e) {
+            showToast('请求语音接口失败: ' + e.message, 'error');
+          } finally {
+            ttsTesting.value = false;
+          }
         };
 
         const manualSpeak = async () => {
-          if (!speakText.value) return;
-          await fetch('/api/broadcast/speak', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: speakText.value })
-          });
-          speakText.value = '';
+          if (!speakText.value.trim()) {
+            showToast('请先输入插播台词', 'warn');
+            return;
+          }
+          try {
+            const res = await fetch('/api/broadcast/speak', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: speakText.value })
+            });
+            await res.json();
+            showToast('插播指令已下发至直播大屏', 'ok');
+            speakText.value = '';
+          } catch (e) {
+            showToast('插播失败: ' + e.message, 'error');
+          }
         };
 
         const sendMockDanmu = async () => {
-          if (!mockDanmuText.value) return;
-          await fetch('/api/test/danmu', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uname: '测试观众', content: mockDanmuText.value })
-          });
+          if (!mockDanmuText.value.trim()) {
+            showToast('请先输入模拟弹幕内容', 'warn');
+            return;
+          }
+          try {
+            const res = await fetch('/api/test/danmu', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uname: '测试观众', content: mockDanmuText.value })
+            });
+            await res.json();
+            showToast('模拟弹幕已注入处理管线', 'ok');
+          } catch (e) {
+            showToast('模拟弹幕失败: ' + e.message, 'error');
+          }
+        };
+
+        const showToast = (msg, type = 'info') => {
+          toast.value = { msg, type, id: Date.now() };
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => { toast.value = null; }, 4000);
         };
 
         const applyPersona = (type) => {
@@ -510,7 +572,8 @@
           config, obsStatus, biliStatus, roomInfo, testTTSContent, speakText, mockDanmuText,
           logs, filteredLogs, autoScroll, terminalRef, currentFilter, filterTabs,
           getBadgeClass, clearLogs, testBiliRoom, connectBili, disconnectBili,
-          saveConfig, toggleStream, testTTS, manualSpeak, sendMockDanmu, applyPersona
+          saveConfig, toggleStream, testTTS, manualSpeak, sendMockDanmu, applyPersona,
+          ttsTesting, toast, showToast
         };
       }
     }).mount('#app');

@@ -4,6 +4,12 @@ from typing import Callable, Optional, Dict, Any
 import blivedm
 from admin.core.ingress.event import DanmuEvent
 
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://live.bilibili.com/"
+}
+
 class BiliHandler(blivedm.BaseHandler):
     def __init__(self, callback: Callable[[DanmuEvent], Any], log_cb: Optional[Callable[[str, str, str], Any]] = None):
         super().__init__()
@@ -64,7 +70,7 @@ class BiliClientWrapper:
     async def resolve_real_room_id(self, target_id: Optional[int] = None) -> int:
         query_id = target_id or self.raw_room_id
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, headers=DEFAULT_HEADERS) as client:
                 res = await client.get(f"https://api.live.bilibili.com/room/v1/Room/room_init?id={query_id}")
                 if res.status_code == 200:
                     data = res.json()
@@ -91,7 +97,7 @@ class BiliClientWrapper:
             "cover": ""
         }
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
+            async with httpx.AsyncClient(timeout=5.0, headers=DEFAULT_HEADERS) as client:
                 res = await client.get(f"https://api.live.bilibili.com/room/v1/Room/get_info?room_id={real_id}")
                 if res.status_code == 200:
                     data = res.json()

@@ -41,16 +41,28 @@ class VolcengineTTSClient:
         payload = self.build_payload(text)
 
         chunks = []
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        raw_lines = 0
+        first_line_preview = ""
+        async with httpx.AsyncClient(timeout=20.0) as client:
             async with client.stream("POST", self.API_URL, headers=headers, json=payload) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
-                    if not line:
+                    if not line or not line.strip():
                         continue
+                    raw_lines += 1
+                    stripped = line.strip()
+                    if raw_lines == 1:
+                        first_line_preview = stripped[:300]
+                    if stripped.startswith("data:"):
+                        stripped = stripped[5:].strip()
                     try:
-                        chunk_json = json.loads(line)
-                        if chunk_json.get("code") == 0 and "data" in chunk_json:
-                            chunks.append(chunk_json["data"])
-                    except json.JSONDecodeError:
+                        chunk_json = json.loads(stripped)
+                        if chunk_json.get("code") == 0:
+                            chunk_data = chunk_json.get("data")
+                            if chunk_data and isinstance(chunk_data, str):
+                                chunks.append(chunk_data)
+                    except (json.JSONDecodeError, AttributeError):
                         continue
+        if not chunks:
+            print(f"[VolcTTS] 未收集到音频分块 (行数={raw_lines}, 首行={first_line_preview})", flush=True)
         return "".join(chunks)

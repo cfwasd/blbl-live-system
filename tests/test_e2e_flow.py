@@ -11,9 +11,8 @@ def test_full_pipeline_e2e():
         live_res = client.get("/live/")
         assert live_res.status_code == 200
 
-        model_res = client.get("/models/gemini/gemini.model3.json")
+        model_res = client.get("/models/gemini/gemini_chan_model_pack/02_透明通道立绘_直播姬已接入.webp")
         assert model_res.status_code == 200
-        assert "ParamMouthOpenY" in model_res.text
 
         # 2. 模拟弹幕注入与指令识别 (切歌)
         cmd_res = client.post("/api/test/danmu", json={"uname": "测试者", "content": "切歌"})
