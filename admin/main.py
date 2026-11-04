@@ -106,9 +106,12 @@ app.add_middleware(
 app.include_router(api.router)
 app.include_router(stream.router)
 
-# 挂载静态目录
+# 挂载静态目录与外部模型目录
 static_dir = os.path.join(os.path.dirname(__file__), "static")
+models_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
 os.makedirs(os.path.join(static_dir, "admin"), exist_ok=True)
 os.makedirs(os.path.join(static_dir, "live"), exist_ok=True)
+os.makedirs(models_dir, exist_ok=True)
 app.mount("/admin", StaticFiles(directory=os.path.join(static_dir, "admin"), html=True), name="admin")
 app.mount("/live", StaticFiles(directory=os.path.join(static_dir, "live"), html=True), name="live")
+app.mount("/models", StaticFiles(directory=models_dir), name="models")
