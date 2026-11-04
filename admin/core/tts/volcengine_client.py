@@ -1,3 +1,4 @@
+import os
 import uuid
 import json
 import httpx
@@ -34,6 +35,9 @@ class VolcengineTTSClient:
 
     async def synthesize_base64_audio(self, text: str) -> str:
         """调用火山 V3 HTTP 单向流式接口，聚合分块返回完整的 Base64 音频"""
+        # 自动化测试环境禁用真实外部调用
+        if os.environ.get("DISABLE_EXTERNAL_AI") == "1":
+            return ""
         if not self.config.api_key:
             return ""  # 未配 Key 时返回空以触发静默降级
 

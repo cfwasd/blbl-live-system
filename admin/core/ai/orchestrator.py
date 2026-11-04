@@ -21,6 +21,8 @@ class AIOrchestrator:
     async def generate_response(self, uname: str, content: str) -> AISpeechPackage:
         prompt = f"观众【{uname}】说：{content}"
         reply_text, tokens = await self.llm.complete(prompt)
+        # 归一化：折叠换行与多余空白，避免大屏气泡与 TTS 出现断行杂质
+        reply_text = " ".join(reply_text.split())
         audio_b64 = await self.tts.synthesize_base64_audio(reply_text)
 
         return AISpeechPackage(

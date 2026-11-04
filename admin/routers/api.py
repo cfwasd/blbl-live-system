@@ -1,4 +1,5 @@
 import os
+import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
@@ -138,10 +139,11 @@ async def manual_speak(req: SpeakRequest, request: Request):
     orchestrator = request.app.state.orchestrator
     broadcaster = request.app.state.broadcaster
     await broadcaster.log("INFO", "SPEAK", f"房管发起插播: {req.text}")
-    audio_b64 = await orchestrator.tts.synthesize_base64_audio(req.text)
+    normalized_text = " ".join(req.text.split())
+    audio_b64 = await orchestrator.tts.synthesize_base64_audio(normalized_text)
     payload = {
         "id": "manual",
-        "text": req.text,
+        "text": normalized_text,
         "audio": f"data:audio/mp3;base64,{audio_b64}" if audio_b64 else "",
         "motion": "Wave",
         "expression": "smile"
@@ -152,7 +154,10 @@ async def manual_speak(req: SpeakRequest, request: Request):
 @router.post("/api/test/danmu")
 async def inject_danmu(req: DanmuTestRequest, request: Request):
     bili_client = request.app.state.bili_client
-    await bili_client.inject_mock_danmu(req.uname, req.content, req.price, req.is_sc)
+    # 后台异步处理，避免 HTTP 请求等待大模型与语音合成而超时
+    asyncio.create_task(
+        bili_client.inject_mock_danmu(req.uname, req.content, req.price, req.is_sc)
+    )
     return {"status": "ok"}
 
 @router.get("/api/banned-words")

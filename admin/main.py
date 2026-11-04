@@ -72,24 +72,31 @@ async def lifespan(app: FastAPI):
         # 定期同步实时统计数据
         await broadcaster.broadcast("stats", broadcaster.get_current_stats())
 
-        # 4. 触发 AI 思考与语音合成
+        # 4. 触发 AI 思考与语音合成（任何外部依赖异常都不得中断主循环）
         if p_res.can_trigger_ai:
             await broadcaster.log("INFO", "AI", f"正在为观众【{event.uname}】的弹幕生成回复...")
-            speech = await orchestrator.generate_response(event.uname, event.content)
-            broadcaster.record_ai_reply(speech.tokens)
-            await broadcaster.log("INFO", "AI", f"回复台词: {speech.text} (消耗 Token: {speech.tokens})")
+            try:
+                speech = await orchestrator.generate_response(event.uname, event.content)
+            except Exception as e:
+                await broadcaster.log("ERROR", "AI", f"AI 回复生成失败: {type(e).__name__}: {e}")
+                speech = None
+            if speech:
+                broadcaster.record_ai_reply(speech.tokens)
+                await broadcaster.log("INFO", "AI", f"回复台词: {speech.text} (消耗 Token: {speech.tokens})")
 
-            if speech.audio_base64:
-                await broadcaster.log("INFO", "TTS", "火山豆包语音合成完成，下发音频流")
+                if speech.audio_base64:
+                    await broadcaster.log("INFO", "TTS", "火山豆包语音合成完成，下发音频流")
+                else:
+                    await broadcaster.log("WARN", "TTS", "未获得音频流，本次仅下发字幕（请检查火山语音配置）")
 
-            await broadcaster.broadcast("ai_speech", {
-                "id": speech.id,
-                "text": speech.text,
-                "audio": f"data:audio/mp3;base64,{speech.audio_base64}" if speech.audio_base64 else "",
-                "motion": speech.motion,
-                "expression": speech.expression
-            })
-            await broadcaster.broadcast("stats", broadcaster.get_current_stats())
+                await broadcaster.broadcast("ai_speech", {
+                    "id": speech.id,
+                    "text": speech.text,
+                    "audio": f"data:audio/mp3;base64,{speech.audio_base64}" if speech.audio_base64 else "",
+                    "motion": speech.motion,
+                    "expression": speech.expression
+                })
+                await broadcaster.broadcast("stats", broadcaster.get_current_stats())
 
     bili_client = BiliClientWrapper(config.bilibili.room_id, handle_incoming_danmu, broadcaster.log)
 

@@ -1,3 +1,5 @@
+import os
+import asyncio
 import httpx
 from typing import Tuple, Optional
 from admin.config import LLMConfig
@@ -8,6 +10,10 @@ class LLMClient:
         self.total_tokens_used = 0
 
     async def complete(self, user_prompt: str) -> Tuple[str, int]:
+        # 自动化测试环境禁用真实外部调用，避免用例依赖外部网络与额度
+        if os.environ.get("DISABLE_EXTERNAL_AI") == "1":
+            return "（离线模拟）收到你的弹幕啦，Gemini娘在这里陪着你！", 25
+
         if not self.config.api_key:
             return f"（模拟回复）欢迎 {user_prompt} 呀，Gemini娘收到啦！", 25
 
@@ -25,11 +31,21 @@ class LLMClient:
             "max_tokens": 100,
             "temperature": 0.7
         }
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(url, headers=headers, json=body)
-            res.raise_for_status()
-            data = res.json()
-            reply = data["choices"][0]["message"]["content"].strip()
-            tokens = data.get("usage", {}).get("total_tokens", 30)
-            self.total_tokens_used += tokens
-            return reply, tokens
+        last_err: Optional[Exception] = None
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=15.0)) as client:
+                    res = await client.post(url, headers=headers, json=body)
+                    res.raise_for_status()
+                    data = res.json()
+                    reply = data["choices"][0]["message"]["content"].strip()
+                    tokens = data.get("usage", {}).get("total_tokens", 30)
+                    self.total_tokens_used += tokens
+                    return reply, tokens
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as e:
+                last_err = e
+                if attempt == 0:
+                    await asyncio.sleep(1.0)
+        if last_err:
+            raise last_err
+        return "", 0
