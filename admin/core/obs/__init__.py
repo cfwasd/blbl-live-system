@@ -1,0 +1,1 @@
+"""OBS websocket integration module."""
