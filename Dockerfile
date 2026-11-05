@@ -5,7 +5,7 @@ FROM node:18-alpine AS frontend-builder
 WORKDIR /build
 
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci || npm ci
 
 COPY frontend/ ./
 RUN npx vite build --outDir /build/dist
@@ -23,11 +23,15 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
+    python3-dev \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --no-cache-dir --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || pip install --no-cache-dir --upgrade pip && \
+    (pip install --no-cache-dir -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com || \
+     pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn || \
+     pip install --no-cache-dir -r requirements.txt)
 
 COPY admin/ ./admin/
 COPY configs/ ./configs/
