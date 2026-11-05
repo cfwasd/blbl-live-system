@@ -1,4 +1,5 @@
 import os
+import time
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ from admin.core.ingress.command_parser import parse_danmu_command
 from admin.core.ingress.bili_client import BiliClientWrapper
 from admin.core.ai.orchestrator import AIOrchestrator
 from admin.core.obs.obs_client import OBSClientWrapper
+from admin.core.music.netease import search_netease_song
 from admin.routers import api, stream
 
 @asynccontextmanager
@@ -22,16 +24,46 @@ async def lifespan(app: FastAPI):
     pipeline = PipelineManager(banned_path)
     orchestrator = AIOrchestrator(config)
     obs_client = OBSClientWrapper(config.obs)
+    seen_users = set()
 
     async def handle_incoming_danmu(event):
+        # 新观众入场迎宾检测
+        if event.uname and event.uname not in seen_users:
+            seen_users.add(event.uname)
+            await broadcaster.broadcast("viewer_welcome", {
+                "uname": event.uname,
+                "badge": event.badge_name or "粉丝团",
+                "level": event.badge_level or 1,
+                "time": time.strftime("%H:%M:%S")
+            })
+
         # 1. 弹幕指令检查 (切歌/点歌等)
         cmd = parse_danmu_command(event.content)
         if cmd:
             await broadcaster.log("INFO", "CMD", f"观众【{event.uname}】触发指令: {cmd.action} {cmd.payload}")
-            if cmd.action in ("switch_song", "request_song"):
+            if cmd.action == "request_song":
+                async def _do_online_request(query: str, uname: str):
+                    song = await search_netease_song(query)
+                    if song:
+                        await broadcaster.log("INFO", "BGM", f"观众【{uname}】在线点歌成功: 《{song['title']}》- {song['artist']}")
+                        await broadcaster.broadcast("bgm_action", {
+                            "action": "play_song",
+                            "song": song,
+                            "uname": uname
+                        })
+                    else:
+                        await broadcaster.log("WARN", "BGM", f"未找到观众【{uname}】点播的歌曲: {query}")
+                        await broadcaster.broadcast("bgm_action", {
+                            "action": "switch",
+                            "payload": query,
+                            "uname": uname
+                        })
+                asyncio.create_task(_do_online_request(cmd.payload, event.uname))
+            elif cmd.action == "switch_song":
                 await broadcaster.broadcast("bgm_action", {
                     "action": "switch",
-                    "payload": cmd.payload
+                    "payload": cmd.payload,
+                    "uname": event.uname
                 })
             elif cmd.action in ("pause_music", "resume_music"):
                 await broadcaster.broadcast("bgm_action", {
@@ -75,6 +107,15 @@ async def lifespan(app: FastAPI):
         # 4. 触发 AI 思考与语音合成（任何外部依赖异常都不得中断主循环）
         if p_res.can_trigger_ai:
             await broadcaster.log("INFO", "AI", f"正在为观众【{event.uname}】的弹幕生成回复...")
+            # 立即向大屏广播正在思考事件，大屏立刻浮现提问卡片与思考动效，零延迟反馈
+            await broadcaster.broadcast("ai_thinking", {
+                "uname": event.uname,
+                "question": event.content,
+                "badge": event.badge_name,
+                "level": event.badge_level,
+                "is_super_chat": event.is_super_chat,
+                "price": event.price
+            })
             try:
                 speech = await orchestrator.generate_response(event.uname, event.content)
             except Exception as e:
@@ -94,11 +135,24 @@ async def lifespan(app: FastAPI):
                     "text": speech.text,
                     "audio": f"data:audio/mp3;base64,{speech.audio_base64}" if speech.audio_base64 else "",
                     "motion": speech.motion,
-                    "expression": speech.expression
+                    "expression": speech.expression,
+                    "reply_to": {
+                        "uname": event.uname,
+                        "question": event.content,
+                        "badge": event.badge_name,
+                        "level": event.badge_level,
+                        "is_super_chat": event.is_super_chat,
+                        "price": event.price
+                    }
                 })
                 await broadcaster.broadcast("stats", broadcaster.get_current_stats())
 
-    bili_client = BiliClientWrapper(config.bilibili.room_id, handle_incoming_danmu, broadcaster.log)
+    bili_client = BiliClientWrapper(
+        config.bilibili.room_id,
+        handle_incoming_danmu,
+        broadcaster.log,
+        sessdata=config.bilibili.sessdata,
+    )
 
     # 挂载状态
     app.state.config = config

@@ -44,6 +44,20 @@ class BGMConfig(BaseModel):
     ducking_volume: float = 0.08
     playlist: List[BGMItem] = Field(default_factory=list)
 
+class GuideItem(BaseModel):
+    tag: str
+    desc: str
+    type: str = "normal"
+
+class BroadcastNoticeConfig(BaseModel):
+    marquee_text: str = "✨ 欢迎来到 Gemini 娘的赛博电竞演播室！✦ 🎵 发送【点歌 歌名】可在线点播网易云流行与二次元歌曲 ✦ 🔀 发送【切歌】或【换首歌】可随时切换伴奏 ✦ 💬 弹幕畅聊，Gemini 娘会语音思考回答你 ✦ 💎 投喂 SC 醒目留言享有专属发光置顶与优先语音答谢！"
+    guide_items: List[GuideItem] = Field(default_factory=lambda: [
+        GuideItem(tag="💬 弹幕聊天", desc="发送任意弹幕即刻触发 AI 思考与语音回答", type="chat"),
+        GuideItem(tag="🎵 在线点歌", desc="发送【点歌 歌名】即播网易云高质音乐", type="music"),
+        GuideItem(tag="🔀 快速切歌", desc="发送【切歌】或【下一首】切换在线伴奏", type="switch"),
+        GuideItem(tag="💎 醒目留言", desc="投喂 SC 解锁专属置顶打赏卡与优先语音答谢", type="sc")
+    ])
+
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     bilibili: BilibiliConfig = Field(default_factory=BilibiliConfig)
@@ -52,6 +66,7 @@ class AppConfig(BaseModel):
     obs: OBSConfig = Field(default_factory=OBSConfig)
     mascot: MascotConfig = Field(default_factory=MascotConfig)
     bgm: BGMConfig = Field(default_factory=BGMConfig)
+    broadcast: BroadcastNoticeConfig = Field(default_factory=BroadcastNoticeConfig)
 
 _CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "configs", "config.yaml")
 _CURRENT_CONFIG: Optional[AppConfig] = None

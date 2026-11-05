@@ -32,3 +32,18 @@ bgm:
       file: "lofi_01.mp3"
     - title: "元气二次元日常"
       file: "anime_02.mp3"
+broadcast:
+  marquee_text: "✨ 欢迎来到 Gemini 娘的赛博演播室！✦ 🎵 发送【点歌 歌名】可在线点播网易云高质音乐 ✦ 🔀 发送【切歌】切换伴奏 ✦ 💬 弹幕畅聊，AI 即刻语音思考回答 ✦ 💎 投喂 SC 享专属发光置顶卡！"
+  guide_items:
+    - tag: "💬 弹幕聊天"
+      desc: "发送任意弹幕即刻触发 AI 思考与语音回答"
+      type: "chat"
+    - tag: "🎵 在线点歌"
+      desc: "发送【点歌 歌名】即播网易云高质音乐"
+      type: "music"
+    - tag: "🔀 快速切歌"
+      desc: "发送【切歌】或【下一首】切换在线伴奏"
+      type: "switch"
+    - tag: "💎 醒目留言"
+      desc: "投喂 SC 解锁专属置顶打赏卡与优先语音答谢"
+      type: "sc"

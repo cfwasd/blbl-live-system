@@ -8,7 +8,7 @@ COPY frontend/package*.json ./
 RUN npm ci
 
 COPY frontend/ ./
-RUN npm run build
+RUN npx vite build --outDir /build/dist
 
 # ==========================================
 # 阶段 2: 构建 Python 生产环境

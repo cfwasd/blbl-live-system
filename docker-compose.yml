@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  virtual-ai-live:
+    build: .
+    image: virtual-ai-live:latest
+    container_name: virtual-ai-live
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./configs:/app/configs
+      - ./models:/app/models
+    environment:
+      - TZ=Asia/Shanghai

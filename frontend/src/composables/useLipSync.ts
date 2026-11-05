@@ -16,7 +16,12 @@ export function useLipSync() {
     }
   };
 
-  const playBase64Audio = async (base64Audio: string, onEnded?: () => void) => {
+  const playBase64Audio = async (
+    base64Audio: string,
+    onProgress?: (progress: number) => void,
+    onStart?: () => void,
+    onEnded?: () => void
+  ) => {
     initAudio();
     if (!audioCtx || !analyser) return;
 
@@ -37,9 +42,10 @@ export function useLipSync() {
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       let isPlaying = true;
+      let startTime = 0;
 
       const updateLoop = () => {
-        if (!isPlaying || !analyser) return;
+        if (!isPlaying || !analyser || !audioCtx) return;
         analyser.getByteFrequencyData(dataArray);
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -47,15 +53,27 @@ export function useLipSync() {
         }
         const avg = sum / dataArray.length;
         currentAmplitude.value = Math.min(1.0, avg / 60);
+
+        // 实时打字机同步进度 (0.0 ~ 1.0)
+        if (onProgress && audioBuffer.duration > 0) {
+          const elapsed = audioCtx.currentTime - startTime;
+          const progress = Math.min(1.0, Math.max(0, elapsed / audioBuffer.duration));
+          onProgress(progress);
+        }
+
         requestAnimationFrame(updateLoop);
       };
 
       source.onended = () => {
         isPlaying = false;
         currentAmplitude.value = 0;
+        if (onProgress) onProgress(1.0);
         if (onEnded) onEnded();
       };
 
+      // 音频真正起播第一毫秒：触发 onStart 保证字体与声音同频起播
+      startTime = audioCtx.currentTime;
+      if (onStart) onStart();
       source.start(0);
       requestAnimationFrame(updateLoop);
     } catch (e) {
@@ -64,5 +82,9 @@ export function useLipSync() {
     }
   };
 
-  return { currentAmplitude, playBase64Audio };
+  const resumeAudio = () => {
+    initAudio();
+  };
+
+  return { currentAmplitude, playBase64Audio, resumeAudio };
 }

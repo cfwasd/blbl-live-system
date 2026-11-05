@@ -3,10 +3,17 @@ import asyncio
 from typing import List, Optional
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
+import time
 from admin.config import AppConfig, save_config, get_config, VolcengineTTSConfig
 from admin.core.tts.volcengine_client import VolcengineTTSClient
+from admin.core.music.netease import search_netease_song, fetch_netease_playlist, fetch_netease_lyric
 
 router = APIRouter()
+
+class WelcomeTestRequest(BaseModel):
+    uname: str = "初次见面的萌新"
+    badge: Optional[str] = "粉丝团"
+    level: Optional[int] = 1
 
 class SpeakRequest(BaseModel):
     text: str
@@ -22,6 +29,12 @@ class BannedWordsRequest(BaseModel):
 
 class BiliConnectRequest(BaseModel):
     room_id: Optional[int] = None
+    sessdata: Optional[str] = None
+
+class BgmControlRequest(BaseModel):
+    action: str = "next"  # next, random, play, pause, select, volume
+    payload: str = ""
+    volume: Optional[float] = None
 
 class TestTTSRequest(BaseModel):
     text: str
@@ -43,6 +56,7 @@ async def update_config(new_config: AppConfig, request: Request):
     orchestrator.llm.config = new_config.llm
     orchestrator.tts.config = new_config.volc_tts
     request.app.state.obs_client.config = new_config.obs
+    request.app.state.bili_client.sessdata = new_config.bilibili.sessdata
 
     broadcaster = request.app.state.broadcaster
     await broadcaster.log("INFO", "CONFIG", "后台配置已更新并持久化，AI 与语音客户端已热重载")
@@ -56,7 +70,8 @@ async def update_config(new_config: AppConfig, request: Request):
         },
         "bgm": {
             "volume": new_config.bgm.default_volume
-        }
+        },
+        "broadcast": new_config.broadcast.model_dump()
     })
     return {"status": "ok"}
 
@@ -80,9 +95,65 @@ async def test_bili_room(req: BiliConnectRequest, request: Request):
 @router.post("/api/bili/connect")
 async def connect_bili_room(req: BiliConnectRequest, request: Request):
     bili = request.app.state.bili_client
+    if req.sessdata is not None:
+        bili.sessdata = req.sessdata.strip()
     target_id = req.room_id or bili.raw_room_id
     success = await bili.start(target_id)
     return {"status": "ok" if success else "failed", "details": bili.get_status()}
+
+@router.get("/api/music/search")
+async def api_search_music(keyword: str):
+    song = await search_netease_song(keyword)
+    if song:
+        return {"status": "ok", "song": song}
+    return {"status": "error", "message": "未搜索到相关在线歌曲"}
+
+@router.get("/api/music/playlist")
+async def api_get_playlist(id: Optional[int] = None):
+    playlist_id = id or 3778678
+    tracks = await fetch_netease_playlist(playlist_id)
+    return {"status": "ok", "playlist": tracks}
+
+@router.get("/api/music/lyric")
+async def api_get_lyric(id: int):
+    lyric = await fetch_netease_lyric(id)
+    return {"status": "ok", "lyric": lyric}
+
+@router.post("/api/test/welcome")
+async def test_welcome_viewer(req: WelcomeTestRequest, request: Request):
+    broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "WELCOME", f"新观众入场: @{req.uname}")
+    await broadcaster.broadcast("viewer_welcome", {
+        "uname": req.uname,
+        "badge": req.badge or "粉丝团",
+        "level": req.level or 1,
+        "time": time.strftime("%H:%M:%S")
+    })
+    return {"status": "ok"}
+
+@router.post("/api/bgm/control")
+async def control_bgm(req: BgmControlRequest, request: Request):
+    broadcaster = request.app.state.broadcaster
+    await broadcaster.log("INFO", "BGM", f"伴奏控制指令: action={req.action} payload={req.payload}")
+
+    # 若指令为点歌，在线实时解析网易云音频直链并下发
+    if req.action in ("request", "play_song") and req.payload:
+        song = await search_netease_song(req.payload)
+        if song:
+            await broadcaster.log("INFO", "BGM", f"点歌解析成功: 《{song['title']}》- {song['artist']}")
+            await broadcaster.broadcast("bgm_action", {
+                "action": "play_song",
+                "song": song,
+                "uname": "房管"
+            })
+            return {"status": "ok", "song": song}
+
+    await broadcaster.broadcast("bgm_action", {
+        "action": req.action,
+        "payload": req.payload,
+        "volume": req.volume
+    })
+    return {"status": "ok"}
 
 @router.post("/api/bili/disconnect")
 async def disconnect_bili_room(request: Request):
@@ -146,7 +217,15 @@ async def manual_speak(req: SpeakRequest, request: Request):
         "text": normalized_text,
         "audio": f"data:audio/mp3;base64,{audio_b64}" if audio_b64 else "",
         "motion": "Wave",
-        "expression": "smile"
+        "expression": "smile",
+        "reply_to": {
+            "uname": "房管插播",
+            "question": normalized_text,
+            "badge": "官方",
+            "level": 99,
+            "is_super_chat": False,
+            "price": 0.0
+        }
     }
     await broadcaster.broadcast("ai_speech", payload)
     return {"status": "ok"}

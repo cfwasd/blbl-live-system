@@ -98,6 +98,11 @@
             </div>
           </div>
 
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-1">SESSDATA Cookie (可选)</label>
+            <input type="password" v-model="config.bilibili.sessdata" placeholder="填入可免除未登录遮蔽他人昵称" class="glass-input w-full rounded-xl p-2 text-xs font-mono text-slate-300">
+          </div>
+
           <div class="flex gap-3">
             <button v-if="!biliStatus.is_running" @click="connectBili" class="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center justify-center gap-2">
               <i class="fa-solid fa-plug"></i> 启动 WebSocket 实时监听
@@ -232,18 +237,68 @@
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-xs text-slate-400 mb-1">立绘大小缩放 ({{ config.mascot.scale }})</label>
-              <input type="range" min="0.5" max="1.5" step="0.05" v-model.number="config.mascot.scale" @input="saveConfig" class="w-full accent-amber-400">
+              <input type="range" min="0.5" max="1.5" step="0.05" v-model.number="config.mascot.scale" class="w-full accent-amber-400">
             </div>
             <div>
               <label class="block text-xs text-slate-400 mb-1">大屏场景风格 (实时热推)</label>
-              <select v-model="config.mascot.theme" @change="saveConfig" class="glass-input w-full rounded-xl p-2 text-xs text-slate-200">
+              <select v-model="config.mascot.theme" class="glass-input w-full rounded-xl p-2 text-xs text-slate-200">
                 <option value="transparent">OBS 纯透明通道</option>
                 <option value="deep_sea">赛博深海星芒幻想</option>
               </select>
             </div>
           </div>
 
-          <!-- 房管插播 & 模拟弹幕 -->
+          <button @click="saveConfig" class="w-full py-2 bg-gradient-to-r from-amber-600/80 to-amber-500/80 hover:from-amber-500 hover:to-amber-400 text-white border border-amber-400/40 rounded-xl text-xs font-bold transition shadow-lg shadow-amber-600/20 flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-floppy-disk"></i> 💾 保存舞台设置到配置文件并热同步
+          </button>
+
+          <!-- BGM 在线曲库与点歌控制 -->
+          <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 space-y-2">
+            <div class="flex justify-between items-center">
+              <label class="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-compact-disc"></i> 直播大屏 Aurora 在线曲库与点歌
+              </label>
+              <div class="flex gap-2">
+                <button @click="triggerBgm('random')" class="px-3 py-1 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white rounded-lg text-xs font-bold transition flex items-center gap-1">
+                  <i class="fa-solid fa-shuffle"></i> 随机切歌
+                </button>
+                <button @click="triggerBgm('pause')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700">
+                  <i class="fa-solid fa-pause"></i> 暂停
+                </button>
+                <button @click="triggerBgm('play')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold border border-slate-700">
+                  <i class="fa-solid fa-play"></i> 播放
+                </button>
+              </div>
+            </div>
+            <!-- 在线点歌搜索与下发 -->
+            <div class="flex gap-2 pt-1">
+              <input v-model="bgmSongQuery" placeholder="输入要点播的在线歌曲名 (如: 晴天 / 恋爱循环 / 起风了)..." class="glass-input flex-1 rounded-xl p-2 text-xs text-slate-200">
+              <button @click="requestOnlineSong" class="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap">
+                <i class="fa-solid fa-music"></i> 在线点歌
+              </button>
+            </div>
+          </div>
+
+          <!-- 快捷调试动效模拟区 (1键触发) -->
+          <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-800 space-y-2">
+            <label class="block text-xs font-semibold text-slate-300">🎮 快捷调试动效模拟器</label>
+            <div class="grid grid-cols-4 gap-2">
+              <button @click="quickSimulate('danmu')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-lg text-xs font-medium border border-cyan-500/20">
+                💬 普通弹幕
+              </button>
+              <button @click="quickSimulate('sc')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg text-xs font-medium border border-amber-500/20">
+                💎 ￥98 SC
+              </button>
+              <button @click="quickSimulate('gift')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-fuchsia-300 rounded-lg text-xs font-medium border border-fuchsia-500/20">
+                🎁 投喂礼物
+              </button>
+              <button @click="quickSimulate('block')" class="py-1.5 px-2 bg-slate-800 hover:bg-slate-700 text-rose-300 rounded-lg text-xs font-medium border border-rose-500/20">
+                🚫 违禁拦截
+              </button>
+            </div>
+          </div>
+
+          <!-- 房管插播 & 自定义模拟弹幕 -->
           <div class="grid grid-cols-2 gap-4">
             <div class="space-y-1.5">
               <label class="block text-xs text-slate-400">房管紧急插播台词</label>
@@ -260,6 +315,40 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- 板块 4: 大屏公告与互动玩法自定义编辑 -->
+        <section class="glass-panel rounded-2xl p-6 space-y-4">
+          <h2 class="text-base font-bold text-cyan-300 flex items-center gap-2">
+            <i class="fa-solid fa-bullhorn"></i> 直播间大屏公告与互动玩法自定义
+          </h2>
+
+          <div>
+            <label class="block text-xs text-slate-400 mb-1">📢 顶部全息跑马灯公告文本 (大屏实时轮播)</label>
+            <textarea v-model="config.broadcast.marquee_text" rows="2" placeholder="输入大屏顶部轮播公告..." class="glass-input w-full rounded-xl p-2.5 text-xs text-slate-200 resize-none"></textarea>
+          </div>
+
+          <div>
+            <div class="flex justify-between items-center mb-1.5">
+              <label class="block text-xs text-slate-400">🎮 互动玩法指南卡片内容 (大屏中央挂件展示)</label>
+              <button @click="addGuideItem" type="button" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm">
+                <i class="fa-solid fa-plus"></i> 添加卡片
+              </button>
+            </div>
+            <div class="space-y-2">
+              <div v-for="(item, idx) in (config.broadcast?.guide_items || [])" :key="idx" class="flex gap-2 items-center">
+                <input v-model="item.tag" placeholder="标签" class="glass-input w-28 rounded-lg p-1.5 text-xs text-cyan-300 font-bold">
+                <input v-model="item.desc" placeholder="玩法说明" class="glass-input flex-1 rounded-lg p-1.5 text-xs text-slate-200">
+                <button @click="removeGuideItem(idx)" type="button" class="p-1.5 text-slate-500 hover:text-rose-400 text-xs transition" title="删除该项">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <button @click="saveConfig" class="w-full py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-cyan-600/20 flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-floppy-disk"></i> 💾 保存大屏公告与玩法文案 (即时热更)
+          </button>
         </section>
 
       </div>
@@ -319,7 +408,8 @@
     createApp({
       setup() {
         const config = ref({
-          server: {}, bilibili: {}, llm: {}, volc_tts: {}, obs: {}, mascot: {}, bgm: {}
+          server: {}, bilibili: {}, llm: {}, volc_tts: {}, obs: {}, mascot: {}, bgm: {},
+          broadcast: { marquee_text: '', guide_items: [] }
         });
         const obsStatus = ref({ connected: false, streaming: false });
         const biliStatus = ref({ is_running: false, raw_room_id: 0, real_room_id: 0 });
@@ -382,7 +472,19 @@
         const fetchConfig = async () => {
           try {
             const res = await fetch('/api/config');
-            config.value = await res.json();
+            const data = await res.json();
+            if (!data.broadcast) {
+              data.broadcast = {
+                marquee_text: '✨ 欢迎来到 Gemini 娘的赛博电竞演播室！✦ 🎵 发送【点歌 歌名】可在线点播网易云流行与二次元歌曲 ✦ 🔀 发送【切歌】随时换伴奏 ✦ 💬 弹幕畅聊主播语音回答 ✦ 💎 投喂 SC 享专属置顶与优先答谢！',
+                guide_items: [
+                  { tag: '💬 弹幕聊天', desc: '发送任意弹幕即刻触发 AI 思考与语音回答', type: 'chat' },
+                  { tag: '🎵 在线点歌', desc: '发送【点歌 歌名】即播网易云高质音乐', type: 'music' },
+                  { tag: '🔀 快速切歌', desc: '发送【切歌】或【下一首】切换在线伴奏', type: 'switch' },
+                  { tag: '💎 醒目留言', desc: '投喂 SC 解锁专属置顶打赏卡与优先语音答谢', type: 'sc' }
+                ]
+              };
+            }
+            config.value = data;
           } catch(e) { console.error(e); }
         };
 
@@ -528,6 +630,75 @@
           }
         };
 
+        const triggerBgm = async (action) => {
+          try {
+            await fetch('/api/bgm/control', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action })
+            });
+            showToast(`伴奏指令【${action}】已发送`, 'ok');
+          } catch (e) {
+            showToast('伴奏控制失败: ' + e.message, 'error');
+          }
+        };
+
+        const bgmSongQuery = ref('');
+        const requestOnlineSong = async () => {
+          if (!bgmSongQuery.value.trim()) {
+            showToast('请输入要点播的在线歌曲名', 'warn');
+            return;
+          }
+          try {
+            const res = await fetch('/api/bgm/control', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'request', payload: bgmSongQuery.value.trim() })
+            });
+            const data = await res.json();
+            if (data.status === 'ok') {
+              showToast(`已向直播大屏点播: 《${bgmSongQuery.value}》`, 'ok');
+              bgmSongQuery.value = '';
+            } else {
+              showToast('点歌失败', 'warn');
+            }
+          } catch (e) {
+            showToast('点歌失败: ' + e.message, 'error');
+          }
+        };
+
+        const quickSimulate = async (type) => {
+          if (type === 'danmu') {
+            await fetch('/api/test/danmu', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uname: '热心粉丝', content: 'Gemini娘今天也超可爱！' })
+            });
+            showToast('已注入测试弹幕', 'ok');
+          } else if (type === 'sc') {
+            await fetch('/api/test/danmu', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uname: '神秘土豪', content: '98元SC支持，求唱个歌~', price: 98, is_sc: true })
+            });
+            showToast('已注入 ￥98 SuperChat 醒目留言', 'ok');
+          } else if (type === 'gift') {
+            await fetch('/api/test/danmu', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uname: '大老板', content: '送出礼物【摩天大楼】x1', price: 666 })
+            });
+            showToast('已注入大额礼物投喂', 'ok');
+          } else if (type === 'block') {
+            await fetch('/api/test/danmu', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ uname: '水军A', content: '加群免费领外挂加群' })
+            });
+            showToast('已注入违禁词，观察右侧风控拦截日志', 'warn');
+          }
+        };
+
         const showToast = (msg, type = 'info') => {
           toast.value = { msg, type, id: Date.now() };
           if (toastTimer) clearTimeout(toastTimer);
@@ -558,6 +729,26 @@
           });
         };
 
+        const addGuideItem = () => {
+          if (!config.value.broadcast) {
+            config.value.broadcast = { marquee_text: '', guide_items: [] };
+          }
+          if (!config.value.broadcast.guide_items) {
+            config.value.broadcast.guide_items = [];
+          }
+          config.value.broadcast.guide_items.push({
+            tag: '✨ 新玩法',
+            desc: '输入玩法说明...',
+            type: 'custom'
+          });
+        };
+
+        const removeGuideItem = (idx) => {
+          if (config.value.broadcast?.guide_items) {
+            config.value.broadcast.guide_items.splice(idx, 1);
+          }
+        };
+
         onMounted(() => {
           fetchConfig();
           fetchOBS();
@@ -573,7 +764,8 @@
           logs, filteredLogs, autoScroll, terminalRef, currentFilter, filterTabs,
           getBadgeClass, clearLogs, testBiliRoom, connectBili, disconnectBili,
           saveConfig, toggleStream, testTTS, manualSpeak, sendMockDanmu, applyPersona,
-          ttsTesting, toast, showToast
+          ttsTesting, toast, showToast, triggerBgm, quickSimulate, bgmSongQuery, requestOnlineSong,
+          addGuideItem, removeGuideItem
         };
       }
     }).mount('#app');

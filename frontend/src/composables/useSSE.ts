@@ -13,7 +13,7 @@ export function useSSE(onEvent: (event: string, data: any) => void) {
       setTimeout(connect, 3000);
     };
 
-    const events = ['danmu', 'super_chat', 'ai_speech', 'stats', 'bgm_action', 'config_sync'];
+    const events = ['danmu', 'super_chat', 'ai_speech', 'ai_thinking', 'viewer_welcome', 'stats', 'bgm_action', 'config_sync'];
     events.forEach(evName => {
       eventSource?.addEventListener(evName, (e: MessageEvent) => {
         try {
