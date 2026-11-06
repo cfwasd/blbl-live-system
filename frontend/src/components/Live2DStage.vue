@@ -226,7 +226,8 @@ onMounted(async () => {
     }
     currentModel.scale.set((props.scale || 1.0) * currentBaseScale);
 
-    // 允许鼠标交互（点击身体/头部触发互动动作）
+    // 适配 PixiJS v7 事件机制，关闭旧版 interactionManager 自动绑定避免 t.on 异常
+    currentModel.autoInteract = false;
     currentModel.interactive = true;
     currentModel.on('hit', (hitAreas: string[]) => {
       try {
