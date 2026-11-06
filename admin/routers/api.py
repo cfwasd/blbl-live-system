@@ -58,6 +58,10 @@ async def update_config(new_config: AppConfig, request: Request):
     await orchestrator.close()
     request.app.state.obs_client.config = new_config.obs
     request.app.state.bili_client.sessdata = new_config.bilibili.sessdata
+    old_room_id = request.app.state.bili_client.raw_room_id
+    request.app.state.bili_client.raw_room_id = new_config.bilibili.room_id
+    if request.app.state.bili_client.is_running and old_room_id != new_config.bilibili.room_id:
+        asyncio.create_task(request.app.state.bili_client.start(new_config.bilibili.room_id))
 
     broadcaster = request.app.state.broadcaster
     await broadcaster.log("INFO", "CONFIG", "后台配置已更新并持久化，AI 与语音客户端已热重载")

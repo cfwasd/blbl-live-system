@@ -1,7 +1,7 @@
-import httpx
-import re
 import urllib.parse
+import re
 from typing import Optional, Dict, Any, List
+import httpx
 
 NETEASE_HEADERS = {
     "User-Agent": (
@@ -9,7 +9,8 @@ NETEASE_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
     "Referer": "https://music.163.com/",
-    "Accept": "application/json, text/plain, */*",
+    "Accept": "*/*",
+    "Cookie": "os=pc; appver=2.9.7"
 }
 
 DEFAULT_ANIME_PLAYLIST_ID = 3778678  # 官方热门推荐歌单
@@ -25,16 +26,20 @@ def clean_song_query(query: str) -> str:
     q = q.strip("《》\"'“”‘’【】[]()（） ")
     return q.strip()
 
-def _normalize_title(text: str) -> str:
+def _normalize_text(text: str) -> str:
     return re.sub(r"[^\w一-龥a-zA-Z0-9]", "", text.lower())
 
 def _is_title_relevant(candidate_title: str, query: str) -> bool:
-    c_norm = _normalize_title(candidate_title)
-    q_norm = _normalize_title(query)
-    if not c_norm or not q_norm:
+    return _is_song_relevant(candidate_title, "", query)
+
+def _is_song_relevant(candidate_title: str, candidate_artists: str, query: str) -> bool:
+    t_norm = _normalize_text(candidate_title)
+    c_norm = _normalize_text(candidate_title + " " + candidate_artists)
+    q_norm = _normalize_text(query)
+    if not t_norm or not q_norm:
         return False
-    # 完全匹配或子串包含
-    if q_norm in c_norm or c_norm in q_norm:
+    # 标题或标题+歌手完全匹配或子串包含
+    if q_norm in t_norm or t_norm in q_norm or q_norm in c_norm or c_norm in q_norm:
         return True
     # 字符重合度计算（解决中日汉字互译及部分曲名偏差，如 千本樱 vs 千本桜）
     set_c = set(c_norm)
@@ -68,7 +73,8 @@ async def search_netease_song(keyword: str) -> Optional[Dict[str, Any]]:
     if not clean_name:
         return None
     query = urllib.parse.quote(clean_name)
-    search_url = f"https://music.163.com/api/search/get/web?s={query}&type=1&offset=0&total=true&limit=12"
+    # 使用 cloudsearch/pc 接口，确保返回结构化 JSON 字典而非加密字符
+    search_url = f"https://music.163.com/api/cloudsearch/pc?s={query}&type=1&offset=0&limit=12"
 
     try:
         async with httpx.AsyncClient(timeout=6.0, headers=NETEASE_HEADERS, follow_redirects=True) as client:
@@ -76,12 +82,20 @@ async def search_netease_song(keyword: str) -> Optional[Dict[str, Any]]:
             if resp.status_code != 200:
                 return {"error": "api_error", "title": clean_name, "message": "网易云音乐搜索接口请求异常"}
             data = resp.json()
-            songs = data.get("result", {}).get("songs", [])
+            result_obj = data.get("result")
+            if not isinstance(result_obj, dict):
+                return {"error": "api_error", "title": clean_name, "message": "网易云搜索返回格式异常"}
+            songs = result_obj.get("songs", [])
             if not songs:
                 return {"error": "not_found", "title": clean_name, "message": f"未搜索到与“{clean_name}”相关的歌曲"}
 
-            # 1. 过滤出标题具有相关性的候选歌曲，杜绝货不对板
-            relevant_songs = [s for s in songs if _is_title_relevant(s.get("name", ""), clean_name)]
+            # 1. 过滤出标题及歌手具有相关性的候选歌曲，杜绝货不对板
+            relevant_songs = []
+            for s in songs:
+                artists_str = " ".join(a.get("name", "") for a in s.get("ar", s.get("artists", [])))
+                if _is_song_relevant(s.get("name", ""), artists_str, clean_name):
+                    relevant_songs.append(s)
+
             if not relevant_songs:
                 return {"error": "not_found", "title": clean_name, "message": f"未搜索到与“{clean_name}”相关的歌曲"}
 
@@ -106,7 +120,8 @@ async def search_netease_song(keyword: str) -> Optional[Dict[str, Any]]:
             if not selected_song:
                 top_song = relevant_songs[0]
                 top_title = top_song.get("name", clean_name)
-                artists = " / ".join(a.get("name", "") for a in top_song.get("artists", [])) or "原唱"
+                artists_list = top_song.get("ar", top_song.get("artists", []))
+                artists = " / ".join(a.get("name", "") for a in artists_list) or "原唱"
                 return {
                     "error": "vip_protected",
                     "title": top_title,
@@ -116,26 +131,27 @@ async def search_netease_song(keyword: str) -> Optional[Dict[str, Any]]:
 
             song_id = selected_song.get("id")
             title = selected_song.get("name", clean_name)
-            artists = " / ".join(a.get("name", "") for a in selected_song.get("artists", [])) or "未知歌手"
+            artists_list = selected_song.get("ar", selected_song.get("artists", []))
+            artists = " / ".join(a.get("name", "") for a in artists_list) or "未知歌手"
 
             # 获取高清专辑封面
             cover = None
             try:
-                detail_url = f"https://music.163.com/api/song/detail/?id={song_id}&ids=%5B{song_id}%5D"
-                detail_resp = await client.get(detail_url)
-                if detail_resp.status_code == 200:
-                    detail_data = detail_resp.json()
-                    detail_songs = detail_data.get("songs", [])
-                    if detail_songs:
-                        cover = detail_songs[0].get("album", {}).get("picUrl")
+                al_obj = selected_song.get("al", selected_song.get("album", {}))
+                cover = al_obj.get("picUrl")
+                if not cover:
+                    detail_url = f"https://music.163.com/api/song/detail/?id={song_id}&ids=%5B{song_id}%5D"
+                    detail_resp = await client.get(detail_url)
+                    if detail_resp.status_code == 200:
+                        detail_data = detail_resp.json()
+                        detail_songs = detail_data.get("songs", [])
+                        if detail_songs:
+                            cover = detail_songs[0].get("album", {}).get("picUrl")
             except Exception:
                 pass
 
             if not cover:
-                cover = (
-                    selected_song.get("album", {}).get("picUrl") or
-                    "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=140&auto=format&fit=crop&q=80"
-                )
+                cover = "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=140&auto=format&fit=crop&q=80"
 
             return {
                 "id": song_id,
@@ -150,47 +166,38 @@ async def search_netease_song(keyword: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         print(f"[NetEase Search Error]: {e}")
         return {"error": "network_error", "title": clean_name, "message": f"点歌请求网络异常: {e}"}
-    except Exception as e:
-        print(f"[NetEase Search Error]: {e}")
-        return None
 
 async def fetch_netease_playlist(playlist_id: int = DEFAULT_ANIME_PLAYLIST_ID) -> List[Dict[str, Any]]:
     """在线拉取指定网易云歌单的所有曲目列表"""
     url = f"https://music.163.com/api/playlist/detail?id={playlist_id}"
     results: List[Dict[str, Any]] = []
-
     try:
-        async with httpx.AsyncClient(timeout=8.0, headers=NETEASE_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=8.0, headers=NETEASE_HEADERS, follow_redirects=True) as client:
             resp = await client.get(url)
-            if resp.status_code != 200:
-                return []
-            data = resp.json()
-            tracks = data.get("result", {}).get("tracks", [])
-            for t in tracks[:30]:  # 精选前 30 首
-                s_id = t.get("id")
-                title = t.get("name", "")
-                artists = " / ".join(a.get("name", "") for a in t.get("artists", [])) or "群星"
-                cover = t.get("album", {}).get("picUrl") or "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=140&auto=format&fit=crop&q=80"
-                outer_url = f"http://music.163.com/song/media/outer/url?id={s_id}.mp3"
-                results.append({
-                    "id": s_id,
-                    "title": title,
-                    "artist": artists,
-                    "cover": cover,
-                    "url": outer_url,
-                    "source": "netease"
-                })
+            if resp.status_code == 200:
+                data = resp.json()
+                tracks = data.get("result", {}).get("tracks", [])
+                for t in tracks:
+                    artists_list = t.get("ar", t.get("artists", []))
+                    artists = " / ".join(a.get("name", "") for a in artists_list) or "未知歌手"
+                    al_obj = t.get("al", t.get("album", {}))
+                    results.append({
+                        "id": t.get("id"),
+                        "title": t.get("name", "未知曲目"),
+                        "artist": artists,
+                        "cover": al_obj.get("picUrl") or "",
+                        "url": f"http://music.163.com/song/media/outer/url?id={t.get('id')}.mp3",
+                        "source": "netease"
+                    })
     except Exception as e:
         print(f"[NetEase Playlist Error]: {e}")
     return results
 
 async def fetch_netease_lyric(song_id: int) -> str:
-    """在线获取单曲的标准 LRC 格式歌词"""
-    if not song_id:
-        return ""
-    url = f"https://music.163.com/api/song/lyric?os=pc&id={song_id}&lv=-1&kv=-1&tv=-1"
+    """获取单曲的原始 LRC 滚动歌词文本"""
+    url = f"https://music.163.com/api/song/lyric?id={song_id}&lv=1&kv=1&tv=-1"
     try:
-        async with httpx.AsyncClient(timeout=5.0, headers=NETEASE_HEADERS) as client:
+        async with httpx.AsyncClient(timeout=5.0, headers=NETEASE_HEADERS, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
                 data = resp.json()
@@ -198,4 +205,3 @@ async def fetch_netease_lyric(song_id: int) -> str:
     except Exception as e:
         print(f"[NetEase Lyric Error]: {e}")
     return ""
-

@@ -257,6 +257,34 @@ class BiliHandler(blivedm.BaseHandler):
             cmd = cmd[:pos]
         if self.log_cb and cmd not in ("_HEARTBEAT", "WATCHED_CHANGE", "ONLINE_RANK_COUNT", "POPULARITY_CHANGE"):
             await self.log_cb("INFO", "BILI_RAW", f"收到服务器事件: {cmd}")
+        if cmd == "INTERACT_WORD":
+            try:
+                data = command.get("data") or {}
+                uname = data.get("uname") or ""
+                if not uname:
+                    return
+                msg_type = data.get("msg_type", 1)
+                fans_medal = data.get("fans_medal") or {}
+                badge_name = str(fans_medal.get("medal_name") or "")
+                badge_level = int(fans_medal.get("medal_level") or 0)
+                action_desc = "进入了直播间" if msg_type == 1 else "关注了主播"
+                if self.log_cb:
+                    await self.log_cb("INFO", "WELCOME", f"[{uname}] {action_desc}")
+                event = DanmuEvent(
+                    uid=int(data.get("uid") or 0),
+                    uname=uname,
+                    content=f"【{action_desc}】",
+                    badge_name=badge_name,
+                    badge_level=badge_level,
+                    price=0.0,
+                    is_super_chat=False,
+                )
+                await self.callback(event)
+            except Exception as e:
+                if self.log_cb:
+                    await self.log_cb("WARN", "BILI", f"解析进房互动异常: {e}")
+            return
+
         if cmd == "DANMU_MSG":
             info = command.get("info") or []
             try:
@@ -427,6 +455,15 @@ class BiliClientWrapper:
                 log_cb=self.log_cb,
                 ssl=True,
             )
+            init_ok = await self.bili_client.init_room()
+            if not init_ok:
+                await self.bili_client.close()
+                self.bili_client = None
+                self.is_running = False
+                if self.log_cb:
+                    await self.log_cb("ERROR", "BILI", f"直播间 [{self.real_room_id}] 认证节点初始化失败")
+                return False
+
             handler = BiliHandler(self.on_danmu, self.log_cb)
             self.bili_client.add_handler(handler)
             self.bili_client.start()

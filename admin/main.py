@@ -40,6 +40,10 @@ async def lifespan(app: FastAPI):
                 "time": time.strftime("%H:%M:%S")
             })
 
+        # 若为观众进房或关注广播，仅展示大屏迎宾横幅，不进大模型队列避免滥刷
+        if event.content in ("【进入了直播间】", "【关注了主播】"):
+            return
+
         # 1. 弹幕指令检查 (切歌/点歌等)
         cmd = parse_danmu_command(event.content)
         if cmd:
