@@ -110,10 +110,14 @@ async def disconnect_bili_room(request: Request):
 
 @router.get("/api/music/search")
 async def api_search_music(keyword: str):
-    song = await search_netease_song(keyword)
-    if song:
-        return {"status": "ok", "song": song}
-    return {"status": "error", "message": "未搜索到相关在线歌曲"}
+    res = await search_netease_song(keyword)
+    if res and not res.get("error"):
+        return {"status": "ok", "song": res}
+    return {
+        "status": "failed",
+        "reason": res.get("error", "not_found") if res else "not_found",
+        "message": res.get("message", "未搜索到相关在线歌曲") if res else "未搜索到相关在线歌曲"
+    }
 
 @router.get("/api/music/playlist")
 async def api_get_playlist(id: Optional[int] = None):

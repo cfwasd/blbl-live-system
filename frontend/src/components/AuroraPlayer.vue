@@ -241,8 +241,13 @@ const playSong = (song: AuroraTrack, uname = '观众') => {
     playlist.value.unshift(song);
     currentIndex.value = 0;
   }
-  showNotification(`观众【${uname}】点歌成功: 《${song.title}》`, '🎉');
+  const tag = (song as any).is_cover ? ' [伴奏/翻唱]' : '';
+  showNotification(`观众【${uname}】点歌成功: 《${song.title}${tag}》`, '🎉');
   loadAndPlayTrack(playlist.value[currentIndex.value]);
+};
+
+const showFailedNotification = (msg: string) => {
+  showNotification(msg, '⚠️');
 };
 
 const playNextTrack = (userAction = false, byDanmu = false, triggerUser = '') => {
@@ -291,6 +296,9 @@ const requestSong = async (songQuery: string, uname = '观众') => {
       if (data.status === 'ok' && data.song) {
         playSong(data.song, uname);
         return;
+      } else {
+        showNotification(data.message || `未找到歌曲《${query}》`, '⚠️');
+        return;
       }
     }
   } catch (e) {
@@ -309,9 +317,8 @@ const requestSong = async (songQuery: string, uname = '观众') => {
     showNotification(`观众【${uname}】点歌: 《${track.title}》`, '🎉');
     loadAndPlayTrack(track);
   } else {
-    playNextTrack(false, false);
-    const track = playlist.value[currentIndex.value];
-    showNotification(`收到观众【${uname}】点歌【${songQuery}】，为你播送《${track.title}》`, '🎵');
+    // 绝不强行替播切歌！明确通知观众未找到
+    showNotification(`未搜索到观众【${uname}】点播的歌曲《${query}》`, '⚠️');
   }
 };
 
@@ -370,6 +377,10 @@ const onTrackEnded = () => {
 
 const onAudioError = () => {
   console.warn('AuroraPlayer 音轨加载出错，自动跳下一首');
+  const failedTrack = playlist.value[currentIndex.value];
+  if (failedTrack) {
+    showNotification(`《${failedTrack.title}》加载异常，为你播放下一首`, '⚠️');
+  }
   playNextTrack(false, false);
 };
 
@@ -457,6 +468,7 @@ defineExpose({
   playPrevTrack,
   requestSong,
   playSong,
+  showFailedNotification,
   setTrack,
   setPlayState,
   togglePlay,

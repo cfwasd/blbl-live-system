@@ -46,19 +46,26 @@ async def lifespan(app: FastAPI):
             await broadcaster.log("INFO", "CMD", f"观众【{event.uname}】触发指令: {cmd.action} {cmd.payload}")
             if cmd.action == "request_song":
                 async def _do_online_request(query: str, uname: str):
-                    song = await search_netease_song(query)
-                    if song:
-                        await broadcaster.log("INFO", "BGM", f"观众【{uname}】在线点歌成功: 《{song['title']}》- {song['artist']}")
+                    res = await search_netease_song(query)
+                    if res and not res.get("error"):
+                        tag = " [伴奏/翻唱]" if res.get("is_cover") else ""
+                        await broadcaster.log("INFO", "BGM", f"观众【{uname}】在线点歌成功: 《{res['title']}{tag}》- {res['artist']}")
                         await broadcaster.broadcast("bgm_action", {
                             "action": "play_song",
-                            "song": song,
+                            "song": res,
                             "uname": uname
                         })
                     else:
-                        await broadcaster.log("WARN", "BGM", f"未找到观众【{uname}】点播的歌曲: {query}")
+                        reason = res.get("error", "not_found") if res else "not_found"
+                        title = res.get("title", query) if res else query
+                        msg = res.get("message") if res else f"未找到与“{query}”相关的可用歌曲"
+                        await broadcaster.log("WARN", "BGM", f"观众【{uname}】点歌未成功 ({reason}): {msg}")
+                        # 广播失败通知至大屏 Toast，绝不强行替播切歌
                         await broadcaster.broadcast("bgm_action", {
-                            "action": "switch",
-                            "payload": query,
+                            "action": "request_failed",
+                            "reason": reason,
+                            "title": title,
+                            "message": msg,
                             "uname": uname
                         })
                 asyncio.create_task(_do_online_request(cmd.payload, event.uname))
