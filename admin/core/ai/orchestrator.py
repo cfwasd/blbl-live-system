@@ -1,5 +1,6 @@
+import re
 from collections import deque
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 from pydantic import BaseModel
 from admin.config import AppConfig
 from admin.core.ai.llm_client import LLMClient
@@ -12,6 +13,57 @@ class AISpeechPackage(BaseModel):
     motion: str = "Wave"
     expression: str = "smile"
     tokens: int = 0
+
+_RE_EMOTION_TAG = re.compile(r"^\[([a-zA-Z一-龥]+)\]\s*")
+
+EMOTION_MAP = {
+    "开心": ("Happy", "smile"),
+    "笑": ("Happy", "smile"),
+    "happy": ("Happy", "smile"),
+    "smile": ("Happy", "smile"),
+    "害羞": ("Shy", "blush"),
+    "傲娇": ("Shy", "blush"),
+    "脸红": ("Shy", "blush"),
+    "shy": ("Shy", "blush"),
+    "blush": ("Shy", "blush"),
+    "思考": ("Think", "think"),
+    "疑惑": ("Think", "think"),
+    "好奇": ("Think", "think"),
+    "think": ("Think", "think"),
+    "挥手": ("Wave", "smile"),
+    "招呼": ("Wave", "smile"),
+    "欢迎": ("Wave", "smile"),
+    "wave": ("Wave", "smile"),
+}
+
+def extract_emotion(text: str) -> Tuple[str, str, str]:
+    """
+    从大模型回复中提取情感标签与纯净台词
+    返回: (clean_text, motion, expression)
+    """
+    motion = "Wave"
+    expression = "smile"
+    clean_text = text.strip()
+
+    # 1. 尝试显式标签提取 [害羞] / [开心] 等
+    match = _RE_EMOTION_TAG.match(clean_text)
+    if match:
+        tag = match.group(1).lower()
+        clean_text = clean_text[match.end():].strip()
+        if tag in EMOTION_MAP:
+            motion, expression = EMOTION_MAP[tag]
+    else:
+        # 2. 隐式关键词匹配
+        if any(k in clean_text for k in ("哈哈", "好耶", "开心", "嘻嘻", "喜欢", "太棒了")):
+            motion, expression = ("Happy", "smile")
+        elif any(k in clean_text for k in ("害羞", "讨厌", "哼", "笨蛋", "才没有", "才不")):
+            motion, expression = ("Shy", "blush")
+        elif any(k in clean_text for k in ("？", "?", "为什么", "好奇", "想一想", "唔")):
+            motion, expression = ("Think", "think")
+        elif any(k in clean_text for k in ("欢迎", "晚上好", "你好", "嗨", "拜拜")):
+            motion, expression = ("Wave", "smile")
+
+    return clean_text or text, motion, expression
 
 class AIOrchestrator:
     def __init__(self, config: AppConfig, max_history_turns: int = 4):
@@ -47,22 +99,25 @@ class AIOrchestrator:
         # 归一化：折叠换行与多余空白，避免大屏气泡与 TTS 出现断行杂质
         reply_text = " ".join(reply_text.split())
 
+        # 提取情感与动作意图，清洗掉括号标签以防 TTS 念出 "[开心]"
+        clean_text, motion, expression = extract_emotion(reply_text)
+
         # 将有效回复压入历史滑窗，供下一轮弹幕连贯互动
-        if reply_text:
+        if clean_text:
             self.dialogue_history.append({
                 "uname": uname,
                 "question": content,
-                "reply": reply_text
+                "reply": clean_text
             })
 
-        audio_b64 = await self.tts.synthesize_base64_audio(reply_text)
+        audio_b64 = await self.tts.synthesize_base64_audio(clean_text)
 
         return AISpeechPackage(
             id=f"speech_{tokens}",
-            text=reply_text,
+            text=clean_text,
             audio_base64=audio_b64,
-            motion="Wave",
-            expression="smile",
+            motion=motion,
+            expression=expression,
             tokens=tokens
         )
 

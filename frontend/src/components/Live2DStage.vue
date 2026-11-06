@@ -4,7 +4,7 @@
     <div class="speech-bubble-wrapper" :class="{ 'speech-active': isSpeaking && speechText }">
       <div class="speech-bubble">
         <div class="speech-header">
-          <span class="speech-name">✦ Gemini 娘</span>
+          <span class="speech-name">✦ 雫酱 (Shizuku)</span>
           <span class="speech-dot"></span>
         </div>
         <div class="speech-content" :class="contentSizeClass">
@@ -108,9 +108,15 @@ const props = withDefaults(defineProps<{
 const viewportRef = ref<HTMLDivElement | null>(null);
 const hasLive2DModel = ref(false);
 const mascotUrl = '/models/gemini/gemini_chan_model_pack/02_透明通道立绘_直播姬已接入.webp';
-const MODEL_URL = '/models/gemini/gemini.model3.json';
+const MODEL_CANDIDATES = [
+  '/models/shizuku/shizuku.model.json',
+  '/models/haru/haru01.model.json',
+  '/models/gemini/gemini.model3.json'
+];
+
 let app: any = null;
 let currentModel: any = null;
+let currentBaseScale = 0.24;
 
 // 动作与微表情状态
 const isBlinking = ref(false);
@@ -177,7 +183,16 @@ onMounted(async () => {
 
   if (!viewportRef.value) return;
 
-  if (!(await modelExists(MODEL_URL))) {
+  // 寻找首个可用的 Live2D 模型（优先 Shizuku 雫酱 / Haru 动作丰富模型）
+  let chosenModelUrl = '';
+  for (const url of MODEL_CANDIDATES) {
+    if (await modelExists(url)) {
+      chosenModelUrl = url;
+      break;
+    }
+  }
+
+  if (!chosenModelUrl) {
     hasLive2DModel.value = false;
     return;
   }
@@ -185,31 +200,70 @@ onMounted(async () => {
   (window as any).PIXI = PIXI;
   try {
     app = new PIXI.Application({
-      width: 600,
-      height: 800,
-      backgroundAlpha: 0
+      width: 520,
+      height: 680,
+      backgroundAlpha: 0,
+      resolution: window.devicePixelRatio || 1,
+      autoDensity: true,
     });
     viewportRef.value.appendChild(app.view as HTMLCanvasElement);
 
-    let Live2DModel: any = null;
-    try {
-      const cubism4Module = await import('pixi-live2d-display/cubism4');
-      Live2DModel = cubism4Module.Live2DModel;
-    } catch {
-      const standardModule = await import('pixi-live2d-display');
-      Live2DModel = standardModule.Live2DModel;
-    }
+    const { Live2DModel } = await import('pixi-live2d-display');
+    Live2DModel.registerTicker(PIXI.Ticker);
 
-    if (Live2DModel) {
-      currentModel = await Live2DModel.from(MODEL_URL);
-      currentModel.anchor.set(0.5, 0.5);
-      currentModel.x = 260;
-      currentModel.y = 350;
-      currentModel.scale.set((props.scale || 1.0) * 0.16);
-      app.stage.addChild(currentModel);
-      hasLive2DModel.value = true;
+    currentModel = await Live2DModel.from(chosenModelUrl);
+    currentModel.anchor.set(0.5, 0.5);
+    currentModel.x = 260;
+    currentModel.y = 420;
+
+    // 模型特异性比例校准
+    if (chosenModelUrl.includes('haru')) {
+      currentBaseScale = 0.18;
+    } else if (chosenModelUrl.includes('shizuku')) {
+      currentBaseScale = 0.24;
+    } else {
+      currentBaseScale = 0.20;
     }
+    currentModel.scale.set((props.scale || 1.0) * currentBaseScale);
+
+    // 允许鼠标交互（点击身体/头部触发互动动作）
+    currentModel.interactive = true;
+    currentModel.on('hit', (hitAreas: string[]) => {
+      try {
+        if (hitAreas.includes('body')) {
+          currentModel.motion('tap_body');
+        } else if (hitAreas.includes('head')) {
+          currentModel.motion('flick_head');
+        }
+      } catch (e) {}
+    });
+
+    app.stage.addChild(currentModel);
+    hasLive2DModel.value = true;
+
+    // 默认开启呼吸与闲适姿态
+    try {
+      currentModel.motion('idle');
+    } catch (e) {}
+
+    // 每一帧统一驱动口型振幅，丝滑匹配 Cubism 2 / Cubism 4
+    app.ticker.add(() => {
+      if (currentModel && currentModel.internalModel) {
+        const core = currentModel.internalModel.coreModel;
+        if (core) {
+          const mouthVal = Math.max(0, Math.min(1.0, (props.mouthOpenY || 0) * 1.5));
+          if (typeof core.setParamFloat === 'function') {
+            // Cubism 2 (Shizuku, Haru)
+            core.setParamFloat('PARAM_MOUTH_OPEN_Y', mouthVal);
+          } else if (typeof core.setParameterValueById === 'function') {
+            // Cubism 4
+            core.setParameterValueById('ParamMouthOpenY', mouthVal);
+          }
+        }
+      }
+    });
   } catch (err) {
+    console.warn('Live2D 初始化异常，降级至拟态 2D 立绘模式:', err);
     hasLive2DModel.value = false;
   }
 });
@@ -217,19 +271,57 @@ onMounted(async () => {
 onUnmounted(() => {
   if (blinkTimer) clearTimeout(blinkTimer);
   if (tiltTimer) clearTimeout(tiltTimer);
+  if (app) {
+    try {
+      app.destroy(true, { children: true, texture: true, baseTexture: true });
+    } catch (e) {}
+  }
 });
 
 watch(() => props.scale, (s) => {
   if (currentModel) {
-    currentModel.scale.set((s || 1.0) * 0.16);
+    currentModel.scale.set((s || 1.0) * currentBaseScale);
   }
 });
 
-watch(() => props.mouthOpenY, (val) => {
-  if (currentModel && currentModel.internalModel?.coreModel) {
-    try {
-      currentModel.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', val);
-    } catch (e) {}
+// 监听 AI 说话时传递的动作与微表情
+watch(() => props.motion, (newMotion) => {
+  if (!currentModel) return;
+  try {
+    if (newMotion === 'Happy' || newMotion === 'Wave') {
+      currentModel.motion('tap_body');
+    } else if (newMotion === 'Shy') {
+      currentModel.motion('shake');
+    } else if (newMotion === 'Think') {
+      currentModel.motion('flick_head');
+    } else if (newMotion) {
+      currentModel.motion(newMotion);
+    }
+  } catch (e) {}
+});
+
+watch(() => props.expression, (newExp) => {
+  if (!currentModel) return;
+  try {
+    if (newExp === 'smile') {
+      currentModel.expression('f01');
+    } else if (newExp === 'blush' || newExp === 'shy') {
+      currentModel.expression('f02');
+    } else if (newExp === 'think') {
+      currentModel.expression('f03');
+    } else if (newExp) {
+      currentModel.expression(newExp);
+    }
+  } catch (e) {}
+});
+
+watch(() => props.isSpeaking, (speaking) => {
+  if (!speaking && currentModel) {
+    setTimeout(() => {
+      try {
+        currentModel.expression('f01');
+      } catch (e) {}
+    }, 1500);
   }
 });
 </script>

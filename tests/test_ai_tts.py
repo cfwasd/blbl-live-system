@@ -2,7 +2,33 @@ import pytest
 from admin.config import AppConfig, LLMConfig, VolcengineTTSConfig
 from admin.core.ai.llm_client import LLMClient
 from admin.core.tts.volcengine_client import VolcengineTTSClient
-from admin.core.ai.orchestrator import AIOrchestrator
+from admin.core.ai.orchestrator import AIOrchestrator, extract_emotion
+
+def test_extract_emotion():
+    # 显式标签提取
+    text, motion, exp = extract_emotion("[开心] 欢迎来到直播间！")
+    assert text == "欢迎来到直播间！"
+    assert motion == "Happy"
+    assert exp == "smile"
+
+    text2, motion2, exp2 = extract_emotion("[害羞] 谁、谁是笨蛋呀！")
+    assert text2 == "谁、谁是笨蛋呀！"
+    assert motion2 == "Shy"
+    assert exp2 == "blush"
+
+    text3, motion3, exp3 = extract_emotion("[思考] 唔...让我想想看呢")
+    assert text3 == "唔...让我想想看呢"
+    assert motion3 == "Think"
+    assert exp3 == "think"
+
+    # 隐式情感推断
+    text4, motion4, exp4 = extract_emotion("哈哈太棒了，今天好开心！")
+    assert motion4 == "Happy"
+    assert exp4 == "smile"
+
+    text5, motion5, exp5 = extract_emotion("为什么会这样呢？好奇")
+    assert motion5 == "Think"
+    assert exp5 == "think"
 
 def test_volc_tts_request_payload():
     cfg = VolcengineTTSConfig(

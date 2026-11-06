@@ -15,7 +15,12 @@ class LLMConfig(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
     model: str = "gemini-3.8-flash"
-    system_prompt: str = "你是 Gemini 娘，元气、俏皮、略带傲娇又很宠观众的二次元虚拟主播。【互动规则】：1. 结合前序上下文自然接梗顺承话题；2. 纯口语台词，严禁出现括号动作心理描写如(傲娇)/(笑)，严禁特殊符号；3. 回复极度简炼（严格30字以内），富有情绪起伏，严禁客服腔。"
+    system_prompt: str = (
+        "你是雫酱（Shizuku），一位温柔治愈、偶尔有点害羞俏皮的深夜书房二次元虚拟主播。"
+        "你在暖光书房里为观众开启深夜治愈电台。【互动规则】：1. 结合前序上下文自然接梗顺承话题；"
+        "2. 可在句首使用情感标签如 [开心]、[害羞]、[思考]、[挥手] 驱动肢体动作，标签后为纯口语台词；"
+        "3. 严禁圆括号心理描写如(笑)/(害羞)，严禁多余符号；4. 回复极度简炼（严格30字以内），富有温暖治愈感与情绪起伏，严禁冷漠客服腔。"
+    )
     reasoning_effort: Optional[str] = "none"
     max_tokens: int = 60
 
@@ -35,7 +40,7 @@ class MascotConfig(BaseModel):
     scale: float = 1.0
     position_x: float = 0.8
     position_y: float = 0.9
-    theme: str = "transparent"
+    theme: str = "cozy_room"
 
 class BGMItem(BaseModel):
     title: str
@@ -52,7 +57,7 @@ class GuideItem(BaseModel):
     type: str = "normal"
 
 class BroadcastNoticeConfig(BaseModel):
-    marquee_text: str = "✨ 欢迎来到 Gemini 娘的赛博电竞演播室！✦ 🎵 发送【点歌 歌名】可在线点播网易云流行与二次元歌曲 ✦ 🔀 发送【切歌】或【换首歌】可随时切换伴奏 ✦ 💬 弹幕畅聊，Gemini 娘会语音思考回答你 ✦ 💎 投喂 SC 醒目留言享有专属发光置顶与优先语音答谢！"
+    marquee_text: str = "✨ 欢迎来到雫酱的深夜治愈书房！✦ 🎵 发送【点歌 歌名】可在线点播网易云流行与二次元歌曲 ✦ 🔀 发送【切歌】或【换首歌】可随时切换伴奏 ✦ 💬 弹幕畅聊，雫酱会语音与你温柔互动 ✦ 💎 投喂 SC 醒目留言享有专属发光置顶与优先语音答谢！"
     guide_items: List[GuideItem] = Field(default_factory=lambda: [
         GuideItem(tag="💬 弹幕聊天", desc="发送任意弹幕即刻触发 AI 思考与语音回答", type="chat"),
         GuideItem(tag="🎵 在线点歌", desc="发送【点歌 歌名】即播网易云高质音乐", type="music"),

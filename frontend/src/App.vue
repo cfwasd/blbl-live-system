@@ -1,7 +1,57 @@
 <template>
   <div class="overlay-screen" :class="'theme-' + currentTheme" @click="handleScreenClick">
-    <!-- 赛博电竞房/深海舞台布景元素 (透明模式下自动隐藏，不影响OBS纯净推流) -->
-    <div v-if="currentTheme !== 'transparent'" class="ambient-cyber-space">
+    <!-- 场景 A：温馨二次元卧室/书房深夜治愈舞台 (非透明模式呈现) -->
+    <div v-if="currentTheme === 'cozy_room'" class="ambient-cozy-space">
+      <!-- 1. 温馨夜空星月书房大窗景 -->
+      <div class="cozy-window-frame">
+        <div class="window-sky">
+          <div class="moon-crescent"></div>
+          <div class="window-stars">
+            <span v-for="n in 14" :key="n" :class="'w-star ws-' + n">✦</span>
+          </div>
+        </div>
+        <div class="window-mullion-v"></div>
+        <div class="window-mullion-h"></div>
+        <div class="curtain-drape curtain-l"></div>
+        <div class="curtain-drape curtain-r"></div>
+      </div>
+
+      <!-- 2. 暖光台灯与漫反射环境氛围光晕 -->
+      <div class="warm-glow glow-mascot-desk"></div>
+      <div class="warm-glow glow-chat-ambient"></div>
+      <div class="warm-glow glow-room-ceiling"></div>
+
+      <!-- 3. 书房温馨书架与暖木装饰剪影 -->
+      <div class="cozy-study-decor">
+        <div class="decor-desk-shelf"></div>
+        <div class="decor-warm-lamp">
+          <div class="lamp-shade"></div>
+          <div class="lamp-beam"></div>
+        </div>
+      </div>
+
+      <!-- 4. 深夜治愈电台高质感标牌 -->
+      <div class="studio-watermark cozy-theme-wm">
+        <div class="wm-badge cozy-badge">
+          <span class="wm-pulse cozy-pulse"></span>
+          <span class="wm-tag">LATE NIGHT ON AIR</span>
+        </div>
+        <div class="wm-main">
+          <span class="wm-icon">✦</span>
+          <span class="wm-text">SHIZUKU COZY STUDY</span>
+          <span class="wm-icon">✦</span>
+        </div>
+        <span class="wm-sub">BILIBILI VIRTUAL LIVE · HEALING RADIO</span>
+      </div>
+
+      <!-- 5. 飘浮漫舞的暖金萤火与微光粒子 (24颗温暖光尘) -->
+      <div class="warm-dust-particles">
+        <span v-for="n in 24" :key="n" :class="'warm-particle wp-' + n"></span>
+      </div>
+    </div>
+
+    <!-- 场景 B：赛博电竞深海舞台布景 -->
+    <div v-else-if="currentTheme === 'deep_sea'" class="ambient-cyber-space">
       <!-- 1. 背景多层梦幻霓虹极光与光斑 -->
       <div class="nebula-glow glow-left-chat"></div>
       <div class="nebula-glow glow-right-mascot"></div>
@@ -157,7 +207,8 @@ import StreamEmotionHeartbeat from './components/StreamEmotionHeartbeat.vue';
 import StreamWelcomeBanner from './components/StreamWelcomeBanner.vue';
 import StreamLyrics from './components/StreamLyrics.vue';
 
-const currentTheme = ref('deep_sea');
+const THEMES = ['cozy_room', 'transparent', 'deep_sea'];
+const currentTheme = ref('cozy_room');
 const mascotScale = ref(1.0);
 const currentRoomId = ref<number | string>('');
 
@@ -217,7 +268,9 @@ const handleKeydown = (e: KeyboardEvent) => {
     unlockAudio();
   }
   if (e.key === 't' || e.key === 'T') {
-    currentTheme.value = currentTheme.value === 'transparent' ? 'deep_sea' : 'transparent';
+    const curIdx = THEMES.indexOf(currentTheme.value);
+    const nextIdx = (curIdx + 1) % THEMES.length;
+    currentTheme.value = THEMES[nextIdx];
   } else if (e.key === 'm' || e.key === 'M') {
     bgmRef.value?.playNextTrack(true);
   }
@@ -276,6 +329,8 @@ useSSE((eventName: string, data: any) => {
   } else if (eventName === 'bgm_action') {
     if (data.action === 'play_song' && data.song) {
       bgmRef.value?.playSong(data.song, data.uname);
+    } else if (data.action === 'request_failed') {
+      bgmRef.value?.showFailedNotification(data.message || '点歌未成功');
     } else if (data.action === 'switch' || data.action === 'next' || data.action === 'random') {
       bgmRef.value?.playNextTrack(false, true, data.uname);
     } else if (data.action === 'request') {
@@ -287,9 +342,13 @@ useSSE((eventName: string, data: any) => {
     }
   } else if (eventName === 'config_sync') {
     if (data.theme) {
-      currentTheme.value = data.theme === 'toggle'
-        ? (currentTheme.value === 'transparent' ? 'deep_sea' : 'transparent')
-        : data.theme;
+      if (data.theme === 'toggle') {
+        const curIdx = THEMES.indexOf(currentTheme.value);
+        const nextIdx = (curIdx + 1) % THEMES.length;
+        currentTheme.value = THEMES[nextIdx];
+      } else {
+        currentTheme.value = data.theme;
+      }
     }
     if (data.mascot?.scale) {
       mascotScale.value = data.mascot.scale;
@@ -395,6 +454,262 @@ body, html {
 
 .theme-deep_sea {
   background: radial-gradient(circle at 80% 80%, rgba(99, 102, 241, 0.4) 0%, rgba(30, 27, 75, 0.85) 40%, #090e24 75%, #030712 100%);
+}
+
+.theme-cozy_room {
+  background: radial-gradient(circle at 75% 70%, rgba(245, 158, 11, 0.28) 0%, rgba(120, 53, 15, 0.45) 35%, #19120c 70%, #0a0604 100%);
+}
+
+/* ================= 场景 A：温馨二次元卧室/书房环境装饰 ================= */
+.ambient-cozy-space {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  overflow: hidden;
+}
+
+/* 1. 书房拱形深夜星月大窗景 */
+.cozy-window-frame {
+  position: absolute;
+  top: 40px;
+  right: max(60px, 6vw);
+  width: 440px;
+  height: 520px;
+  border-radius: 220px 220px 14px 14px;
+  border: 4px solid rgba(180, 83, 9, 0.45);
+  box-shadow: 0 0 50px rgba(245, 158, 11, 0.15), inset 0 0 40px rgba(10, 15, 30, 0.9);
+  overflow: hidden;
+  background: #060914;
+  z-index: 1;
+}
+
+.window-sky {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, #050713 0%, #0c1427 55%, #172554 100%);
+}
+
+.moon-crescent {
+  position: absolute;
+  top: 45px;
+  right: 55px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  box-shadow: 7px 7px 0 0 #fde68a;
+  filter: drop-shadow(0 0 16px rgba(253, 230, 138, 0.85));
+  animation: moonGlowPulse 4s ease-in-out infinite alternate;
+}
+
+@keyframes moonGlowPulse {
+  0% { filter: drop-shadow(0 0 12px rgba(253, 230, 138, 0.7)); }
+  100% { filter: drop-shadow(0 0 22px rgba(253, 230, 138, 0.95)); }
+}
+
+.window-stars {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+}
+
+.w-star {
+  position: absolute;
+  color: #fef08a;
+  font-size: 10px;
+  animation: starTwinkle 3s ease-in-out infinite alternate;
+  text-shadow: 0 0 6px rgba(254, 240, 138, 0.8);
+}
+.ws-1 { top: 18%; left: 22%; animation-delay: 0.2s; font-size: 12px; }
+.ws-2 { top: 28%; left: 45%; animation-delay: 1.1s; font-size: 8px; }
+.ws-3 { top: 15%; left: 75%; animation-delay: 1.8s; font-size: 11px; }
+.ws-4 { top: 38%; left: 18%; animation-delay: 0.6s; font-size: 9px; }
+.ws-5 { top: 48%; left: 35%; animation-delay: 2.3s; font-size: 13px; color: #fde047; }
+.ws-6 { top: 32%; left: 62%; animation-delay: 0.9s; font-size: 7px; }
+.ws-7 { top: 60%; left: 24%; animation-delay: 1.4s; font-size: 10px; }
+.ws-8 { top: 52%; left: 78%; animation-delay: 2.0s; font-size: 8px; }
+.ws-9 { top: 72%; left: 42%; animation-delay: 0.4s; font-size: 11px; }
+.ws-10 { top: 68%; left: 68%; animation-delay: 1.6s; font-size: 9px; }
+.ws-11 { top: 82%; left: 30%; animation-delay: 2.5s; font-size: 7px; }
+.ws-12 { top: 22%; left: 52%; animation-delay: 0.8s; font-size: 10px; }
+.ws-13 { top: 88%; left: 72%; animation-delay: 1.3s; font-size: 8px; }
+.ws-14 { top: 42%; left: 85%; animation-delay: 2.1s; font-size: 10px; }
+
+.window-mullion-v {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3.5px;
+  height: 100%;
+  background: rgba(180, 83, 9, 0.45);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.window-mullion-h {
+  position: absolute;
+  top: 55%;
+  left: 0;
+  width: 100%;
+  height: 3.5px;
+  background: rgba(180, 83, 9, 0.45);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}
+
+.curtain-drape {
+  position: absolute;
+  top: 0;
+  width: 65px;
+  height: 100%;
+  pointer-events: none;
+}
+.curtain-l {
+  left: 0;
+  background: linear-gradient(90deg, rgba(146, 64, 14, 0.7) 0%, rgba(180, 83, 9, 0.3) 60%, transparent 100%);
+  border-right: 1px dashed rgba(245, 158, 11, 0.2);
+}
+.curtain-r {
+  right: 0;
+  background: linear-gradient(-90deg, rgba(146, 64, 14, 0.7) 0%, rgba(180, 83, 9, 0.3) 60%, transparent 100%);
+  border-left: 1px dashed rgba(245, 158, 11, 0.2);
+}
+
+/* 2. 暖光漫反射环境光晕 */
+.warm-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.glow-mascot-desk {
+  bottom: 0%;
+  right: 5%;
+  width: 650px;
+  height: 550px;
+  background: radial-gradient(ellipse, rgba(245, 158, 11, 0.38) 0%, rgba(217, 119, 6, 0.16) 50%, transparent 80%);
+  filter: blur(80px);
+}
+.glow-chat-ambient {
+  bottom: 8%;
+  left: 5%;
+  width: 560px;
+  height: 420px;
+  background: radial-gradient(ellipse, rgba(251, 191, 36, 0.22) 0%, rgba(180, 83, 9, 0.1) 60%, transparent 80%);
+  filter: blur(80px);
+}
+.glow-room-ceiling {
+  top: 0%;
+  left: 30%;
+  width: 750px;
+  height: 260px;
+  background: radial-gradient(ellipse, rgba(253, 230, 138, 0.16) 0%, transparent 70%);
+  filter: blur(75px);
+}
+
+/* 3. 书房温馨木质书桌与暖光台灯装饰 */
+.cozy-study-decor {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 580px;
+  height: 85px;
+  pointer-events: none;
+  z-index: 2;
+}
+.decor-desk-shelf {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 100%;
+  height: 70px;
+  background: linear-gradient(180deg, rgba(120, 53, 15, 0.45) 0%, rgba(35, 18, 9, 0.95) 100%);
+  border-top: 2px solid rgba(245, 158, 11, 0.35);
+  border-radius: 24px 0 0 0;
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.6);
+}
+
+/* 4. 深夜治愈书房标牌 */
+.cozy-theme-wm {
+  color: #fbbf24 !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  background: rgba(30, 18, 11, 0.65) !important;
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.15) !important;
+  opacity: 0.45 !important;
+}
+.cozy-badge {
+  background: rgba(245, 158, 11, 0.2) !important;
+  border-color: rgba(245, 158, 11, 0.5) !important;
+}
+.cozy-pulse {
+  background: #fbbf24 !important;
+  box-shadow: 0 0 8px #f59e0b !important;
+}
+
+/* 5. 飘浮漫舞的暖金萤火与微光粒子 */
+.warm-dust-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  overflow: hidden;
+}
+.warm-particle {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fde047 0%, rgba(245, 158, 11, 0.6) 50%, transparent 70%);
+  opacity: 0.6;
+  animation: floatWarmEmber 10s infinite ease-in-out;
+}
+.wp-1 { width: 5px; height: 5px; top: 20%; left: 22%; animation-duration: 9s; }
+.wp-2 { width: 8px; height: 8px; top: 40%; left: 35%; animation-duration: 12s; animation-delay: 1.5s; }
+.wp-3 { width: 4px; height: 4px; top: 65%; left: 16%; animation-duration: 8s; animation-delay: 2.5s; }
+.wp-4 { width: 6px; height: 6px; top: 25%; left: 60%; animation-duration: 14s; }
+.wp-5 { width: 7px; height: 7px; top: 58%; left: 55%; animation-duration: 11s; animation-delay: 1s; }
+.wp-6 { width: 5px; height: 5px; top: 75%; left: 42%; animation-duration: 13s; }
+.wp-7 { width: 4px; height: 4px; top: 30%; left: 80%; animation-duration: 10s; animation-delay: 2s; }
+.wp-8 { width: 7px; height: 7px; top: 50%; left: 75%; animation-duration: 11s; }
+.wp-9 { width: 4px; height: 4px; top: 15%; left: 45%; animation-duration: 15s; }
+.wp-10 { width: 6px; height: 6px; top: 80%; left: 25%; animation-duration: 12s; }
+.wp-11 { width: 3px; height: 3px; top: 45%; left: 10%; animation-duration: 9s; }
+.wp-12 { width: 7px; height: 7px; top: 70%; left: 85%; animation-duration: 12s; }
+.wp-13 { width: 5px; height: 5px; top: 18%; left: 88%; animation-duration: 13s; }
+.wp-14 { width: 6px; height: 6px; top: 86%; left: 65%; animation-duration: 10s; }
+.wp-15 { width: 8px; height: 8px; top: 35%; left: 50%; animation-duration: 14s; animation-delay: 1s; }
+.wp-16 { width: 4px; height: 4px; top: 58%; left: 30%; animation-duration: 11s; }
+.wp-17 { width: 3px; height: 3px; top: 82%; left: 50%; animation-duration: 8s; }
+.wp-18 { width: 5px; height: 5px; top: 12%; left: 72%; animation-duration: 12s; }
+.wp-19 { width: 4px; height: 4px; top: 62%; left: 88%; animation-duration: 10s; }
+.wp-20 { width: 7px; height: 7px; top: 48%; left: 95%; animation-duration: 13s; }
+.wp-21 { width: 4px; height: 4px; top: 78%; left: 68%; animation-duration: 11s; }
+.wp-22 { width: 5px; height: 5px; top: 28%; left: 18%; animation-duration: 14s; }
+.wp-23 { width: 3px; height: 3px; top: 90%; left: 38%; animation-duration: 9s; }
+.wp-24 { width: 6px; height: 6px; top: 8%; left: 62%; animation-duration: 12s; }
+
+@keyframes floatWarmEmber {
+  0%, 100% { transform: translateY(0) scale(0.9); opacity: 0.35; }
+  50% { transform: translateY(-26px) scale(1.35); opacity: 0.95; }
+}
+
+/* 舞台地台在温馨书房风格下的暖金渲染 */
+.theme-cozy_room .pedestal-outer-ring {
+  border: 1px solid rgba(245, 158, 11, 0.45) !important;
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.3) !important;
+}
+.theme-cozy_room .pedestal-inner-ring {
+  border: 1px dashed rgba(251, 191, 36, 0.6) !important;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.45) !important;
+}
+.theme-cozy_room .pedestal-core-glow {
+  background: radial-gradient(ellipse at center, rgba(245, 158, 11, 0.35) 0%, transparent 70%) !important;
+}
+.theme-cozy_room .pedestal-light-cone {
+  background: linear-gradient(to top, rgba(245, 158, 11, 0.16) 0%, transparent 100%) !important;
 }
 
 /* 沉浸式赛博电竞房与深海背景装饰 */
