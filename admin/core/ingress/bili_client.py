@@ -159,8 +159,17 @@ class WbiBLiveClient(blivedm.BLiveClient):
             except Exception as e:
                 await self._emit_log("WARN", "BILI", f"获取弹幕节点异常: {e}")
 
-        self._host_server_list = blivedm.client.DEFAULT_DANMAKU_SERVER_LIST
-        self._host_server_token = None
+        # 若未成功获取到 Token，禁止无 Token 连接（B站将直接拒绝握手断开连接）
+        if not self._host_server_token:
+            self._host_server_list = blivedm.client.DEFAULT_DANMAKU_SERVER_LIST
+            self._host_server_token = None
+            await self._emit_log(
+                "ERROR",
+                "BILI",
+                "未能获取有效的弹幕认证 Token (可能由于 B站 -352 风控或网络异常)，中止连接",
+            )
+            return False
+
         return True
 
     async def _send_auth(self):

@@ -162,6 +162,10 @@ async def lifespan(app: FastAPI):
     app.state.obs_client = obs_client
     app.state.bili_client = bili_client
 
+    # 若配置了有效房间号，服务启动时自动开启 WebSocket 弹幕监听
+    if config.bilibili.room_id:
+        asyncio.create_task(bili_client.start())
+
     await broadcaster.log("INFO", "SYSTEM", "虚拟AI主播管理服务已启动")
 
     yield
