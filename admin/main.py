@@ -11,6 +11,7 @@ from admin.core.pipeline.pipeline_manager import PipelineManager
 from admin.core.ingress.command_parser import parse_danmu_command
 from admin.core.ingress.bili_client import BiliClientWrapper
 from admin.core.ai.orchestrator import AIOrchestrator
+from admin.core.ai.worker import AIWorker
 from admin.core.obs.obs_client import OBSClientWrapper
 from admin.core.music.netease import search_netease_song
 from admin.routers import api, stream
@@ -23,6 +24,8 @@ async def lifespan(app: FastAPI):
     banned_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "configs", "banned_words.txt")
     pipeline = PipelineManager(banned_path)
     orchestrator = AIOrchestrator(config)
+    ai_worker = AIWorker(orchestrator, broadcaster)
+    ai_worker.start()
     obs_client = OBSClientWrapper(config.obs)
     seen_users = set()
 
@@ -104,48 +107,9 @@ async def lifespan(app: FastAPI):
         # 定期同步实时统计数据
         await broadcaster.broadcast("stats", broadcaster.get_current_stats())
 
-        # 4. 触发 AI 思考与语音合成（任何外部依赖异常都不得中断主循环）
+        # 4. 极速入队解耦的 AI 调度队列（<0.1ms 立即返回，WebSocket 长连接绝不阻塞）
         if p_res.can_trigger_ai:
-            await broadcaster.log("INFO", "AI", f"正在为观众【{event.uname}】的弹幕生成回复...")
-            # 立即向大屏广播正在思考事件，大屏立刻浮现提问卡片与思考动效，零延迟反馈
-            await broadcaster.broadcast("ai_thinking", {
-                "uname": event.uname,
-                "question": event.content,
-                "badge": event.badge_name,
-                "level": event.badge_level,
-                "is_super_chat": event.is_super_chat,
-                "price": event.price
-            })
-            try:
-                speech = await orchestrator.generate_response(event.uname, event.content)
-            except Exception as e:
-                await broadcaster.log("ERROR", "AI", f"AI 回复生成失败: {type(e).__name__}: {e}")
-                speech = None
-            if speech:
-                broadcaster.record_ai_reply(speech.tokens)
-                await broadcaster.log("INFO", "AI", f"回复台词: {speech.text} (消耗 Token: {speech.tokens})")
-
-                if speech.audio_base64:
-                    await broadcaster.log("INFO", "TTS", "火山豆包语音合成完成，下发音频流")
-                else:
-                    await broadcaster.log("WARN", "TTS", "未获得音频流，本次仅下发字幕（请检查火山语音配置）")
-
-                await broadcaster.broadcast("ai_speech", {
-                    "id": speech.id,
-                    "text": speech.text,
-                    "audio": f"data:audio/mp3;base64,{speech.audio_base64}" if speech.audio_base64 else "",
-                    "motion": speech.motion,
-                    "expression": speech.expression,
-                    "reply_to": {
-                        "uname": event.uname,
-                        "question": event.content,
-                        "badge": event.badge_name,
-                        "level": event.badge_level,
-                        "is_super_chat": event.is_super_chat,
-                        "price": event.price
-                    }
-                })
-                await broadcaster.broadcast("stats", broadcaster.get_current_stats())
+            ai_worker.enqueue(event, score=p_res.score)
 
     bili_client = BiliClientWrapper(
         config.bilibili.room_id,
@@ -159,17 +123,20 @@ async def lifespan(app: FastAPI):
     app.state.broadcaster = broadcaster
     app.state.pipeline = pipeline
     app.state.orchestrator = orchestrator
+    app.state.ai_worker = ai_worker
     app.state.obs_client = obs_client
     app.state.bili_client = bili_client
 
     # 若配置了有效房间号，服务启动时自动开启 WebSocket 弹幕监听
     if config.bilibili.room_id:
-        asyncio.create_task(bili_client.start())
+        asyncio.create_task(bili_client.start(config.bilibili.room_id))
 
     await broadcaster.log("INFO", "SYSTEM", "虚拟AI主播管理服务已启动")
 
     yield
 
+    await ai_worker.stop()
+    await orchestrator.close()
     if bili_client.is_running:
         await bili_client.stop()
 

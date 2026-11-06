@@ -112,6 +112,16 @@ class WbiBLiveClient(blivedm.BLiveClient):
         async with httpx.AsyncClient(timeout=10.0, headers=DEFAULT_HEADERS) as client:
             await self._fetch_wbi_and_buvid(client)
 
+            # 同步 Cookie 到 WebSocket 连接 Session
+            if self._session and not self._session.closed:
+                cookie_parts = []
+                if self._buvid3:
+                    cookie_parts.append(f"buvid3={self._buvid3}")
+                if self._sessdata:
+                    cookie_parts.append(f"SESSDATA={self._sessdata}")
+                if cookie_parts:
+                    self._session.headers["Cookie"] = "; ".join(cookie_parts)
+
             # 1. 获取真实房间号与主播 UID
             try:
                 res = await client.get(
@@ -176,7 +186,7 @@ class WbiBLiveClient(blivedm.BLiveClient):
         auth_params: Dict[str, Any] = {
             "uid": self._uid,
             "roomid": self._room_id,
-            "protover": 3,
+            "protover": 2,
             "platform": "web",
             "type": 2,
         }
@@ -245,6 +255,8 @@ class BiliHandler(blivedm.BaseHandler):
         pos = cmd.find(":")
         if pos != -1:
             cmd = cmd[:pos]
+        if self.log_cb and cmd not in ("_HEARTBEAT", "WATCHED_CHANGE", "ONLINE_RANK_COUNT", "POPULARITY_CHANGE"):
+            await self.log_cb("INFO", "BILI_RAW", f"收到服务器事件: {cmd}")
         if cmd == "DANMU_MSG":
             info = command.get("info") or []
             try:

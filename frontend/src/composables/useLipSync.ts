@@ -3,6 +3,7 @@ import { ref } from 'vue';
 export function useLipSync() {
   let audioCtx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
+  let currentSource: AudioBufferSourceNode | null = null;
   const currentAmplitude = ref(0);
 
   const initAudio = () => {
@@ -13,6 +14,16 @@ export function useLipSync() {
     }
     if (audioCtx.state === 'suspended') {
       audioCtx.resume();
+    }
+  };
+
+  const stopAudio = () => {
+    if (currentSource) {
+      try {
+        currentSource.stop();
+        currentSource.disconnect();
+      } catch (_) {}
+      currentSource = null;
     }
   };
 
@@ -33,9 +44,13 @@ export function useLipSync() {
         bytes[i] = binary.charCodeAt(i);
       }
 
+      // 若当前已有音频正在播放，立即平滑中止前一段音频，防止声音重叠或爆音
+      stopAudio();
+
       const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
       const source = audioCtx.createBufferSource();
       source.buffer = audioBuffer;
+      currentSource = source;
 
       source.connect(analyser);
       analyser.connect(audioCtx.destination);
@@ -65,6 +80,9 @@ export function useLipSync() {
       };
 
       source.onended = () => {
+        if (currentSource === source) {
+          currentSource = null;
+        }
         isPlaying = false;
         currentAmplitude.value = 0;
         if (onProgress) onProgress(1.0);
@@ -86,5 +104,5 @@ export function useLipSync() {
     initAudio();
   };
 
-  return { currentAmplitude, playBase64Audio, resumeAudio };
+  return { currentAmplitude, playBase64Audio, resumeAudio, stopAudio };
 }

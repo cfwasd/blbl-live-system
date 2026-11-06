@@ -10,6 +10,22 @@ class VolcengineTTSClient:
 
     def __init__(self, config: VolcengineTTSConfig):
         self.config = config
+        self._client: Optional[httpx.AsyncClient] = None
+
+    async def get_client(self) -> httpx.AsyncClient:
+        """复用长连接 HTTP 客户端，消除火山语音合成每次建立 TLS/TCP 的网络开销"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(20.0, connect=5.0),
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10, keepalive_expiry=60.0),
+            )
+        return self._client
+
+    async def close(self):
+        """释放底层 HTTP 连接池"""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def build_headers(self) -> dict:
         return {
@@ -47,7 +63,8 @@ class VolcengineTTSClient:
         chunks = []
         raw_lines = 0
         first_line_preview = ""
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        client = await self.get_client()
+        try:
             async with client.stream("POST", self.API_URL, headers=headers, json=payload) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
@@ -67,6 +84,27 @@ class VolcengineTTSClient:
                                 chunks.append(chunk_data)
                     except (json.JSONDecodeError, AttributeError):
                         continue
+        except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError):
+            await self.close()
+            # 网络闪断时尝试重连一次
+            try:
+                retry_client = await self.get_client()
+                async with retry_client.stream("POST", self.API_URL, headers=headers, json=payload) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line or not line.strip():
+                            continue
+                        stripped = line.strip()
+                        if stripped.startswith("data:"):
+                            stripped = stripped[5:].strip()
+                        try:
+                            chunk_json = json.loads(stripped)
+                            if chunk_json.get("code") == 0 and chunk_json.get("data"):
+                                chunks.append(chunk_json["data"])
+                        except Exception:
+                            continue
+            except Exception:
+                pass
         if not chunks:
             print(f"[VolcTTS] 未收集到音频分块 (行数={raw_lines}, 首行={first_line_preview})", flush=True)
         return "".join(chunks)

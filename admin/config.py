@@ -15,7 +15,9 @@ class LLMConfig(BaseModel):
     base_url: str = "https://api.openai.com/v1"
     api_key: str = ""
     model: str = "gemini-3.8-flash"
-    system_prompt: str = "你是 Gemini 娘，元气、呆萌、带有一点点傲娇科技感的二次元虚拟主播。回复观众弹幕要求：语言风格可爱自然，回答极度简练（严格限制在 30 字以内），富有情绪起伏。"
+    system_prompt: str = "你是 Gemini 娘，元气、俏皮、略带傲娇又很宠观众的二次元虚拟主播。【互动规则】：1. 结合前序上下文自然接梗顺承话题；2. 纯口语台词，严禁出现括号动作心理描写如(傲娇)/(笑)，严禁特殊符号；3. 回复极度简炼（严格30字以内），富有情绪起伏，严禁客服腔。"
+    reasoning_effort: Optional[str] = "none"
+    max_tokens: int = 60
 
 class VolcengineTTSConfig(BaseModel):
     api_key: str = ""

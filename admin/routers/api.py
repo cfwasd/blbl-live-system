@@ -55,6 +55,7 @@ async def update_config(new_config: AppConfig, request: Request):
     orchestrator.config = new_config
     orchestrator.llm.config = new_config.llm
     orchestrator.tts.config = new_config.volc_tts
+    await orchestrator.close()
     request.app.state.obs_client.config = new_config.obs
     request.app.state.bili_client.sessdata = new_config.bilibili.sessdata
 
@@ -100,6 +101,12 @@ async def connect_bili_room(req: BiliConnectRequest, request: Request):
     target_id = req.room_id or bili.raw_room_id
     success = await bili.start(target_id)
     return {"status": "ok" if success else "failed", "details": bili.get_status()}
+
+@router.post("/api/bili/disconnect")
+async def disconnect_bili_room(request: Request):
+    bili = request.app.state.bili_client
+    await bili.stop()
+    return {"status": "ok", "details": bili.get_status()}
 
 @router.get("/api/music/search")
 async def api_search_music(keyword: str):
@@ -153,12 +160,6 @@ async def control_bgm(req: BgmControlRequest, request: Request):
         "payload": req.payload,
         "volume": req.volume
     })
-    return {"status": "ok"}
-
-@router.post("/api/bili/disconnect")
-async def disconnect_bili_room(request: Request):
-    bili = request.app.state.bili_client
-    await bili.stop()
     return {"status": "ok"}
 
 @router.post("/api/test/tts")

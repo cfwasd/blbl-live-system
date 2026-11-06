@@ -36,3 +36,36 @@ async def test_ai_orchestrator_mock():
     speech = await orchestrator.generate_response("测试观众", "你好呀")
     assert speech.text != ""
     assert speech.motion == "Wave"
+
+@pytest.mark.asyncio
+async def test_ai_orchestrator_multi_turn_context():
+    app_cfg = AppConfig()
+    orchestrator = AIOrchestrator(app_cfg, max_history_turns=3)
+
+    # 1. 初始空历史，仅包含 System Prompt 与当前用户
+    init_msgs = orchestrator.build_messages("小明", "今天播什么")
+    assert len(init_msgs) == 2
+    assert init_msgs[0]["role"] == "system"
+    assert init_msgs[1]["content"] == "观众【小明】说：今天播什么"
+
+    # 2. 生成第 1 轮回复后，历史队列应当包含该记录
+    await orchestrator.generate_response("小明", "今天播什么")
+    assert len(orchestrator.dialogue_history) == 1
+    assert orchestrator.dialogue_history[0]["uname"] == "小明"
+
+    # 3. 构造第 2 轮 messages，应当包含上一轮的 user 与 assistant
+    msgs_round2 = orchestrator.build_messages("小红", "那来首歌吧")
+    assert len(msgs_round2) == 4
+    assert msgs_round2[1]["role"] == "user"
+    assert "今天播什么" in msgs_round2[1]["content"]
+    assert msgs_round2[2]["role"] == "assistant"
+    assert msgs_round2[3]["content"] == "观众【小红】说：那来首歌吧"
+
+    # 4. 连续多轮互动，滑窗上限自动限制为 3 轮
+    for i in range(5):
+        await orchestrator.generate_response(f"观众{i}", f"弹幕{i}")
+    assert len(orchestrator.dialogue_history) == 3
+
+    # 5. 清空历史
+    orchestrator.clear_history()
+    assert len(orchestrator.dialogue_history) == 0
