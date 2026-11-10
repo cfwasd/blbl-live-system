@@ -8,7 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@livliv-dev/player": "file:../../../../tmp/livliv-player",
+    "@livliv-dev/player": "^0.3.0",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^7.3.2",
     "vue": "^3.3.11"
