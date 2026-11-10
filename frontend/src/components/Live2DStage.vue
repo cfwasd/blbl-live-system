@@ -4,7 +4,7 @@
     <div class="speech-bubble-wrapper" :class="{ 'speech-active': isSpeaking && speechText }">
       <div class="speech-bubble">
         <div class="speech-header">
-          <span class="speech-name">✦ 雫酱 (Shizuku)</span>
+          <span class="speech-name">✦ {{ currentCharacterName }}</span>
           <span class="speech-dot"></span>
         </div>
         <div class="speech-content" :class="contentSizeClass">
@@ -22,9 +22,17 @@
       <div class="pedestal-light-cone"></div>
     </div>
 
-    <!-- 用户专属透明通道立绘 (带丰富多层微表情与动效) -->
+    <!-- LivLiv 2.5D 精美角色画布 (高保真 WebGL2 实时动画) -->
+    <canvas
+      v-show="hasLivLivModel"
+      ref="livlivCanvasRef"
+      class="livliv-stage-canvas"
+      :style="{ transform: 'scale(' + (scale || 1.0) + ')' }"
+    ></canvas>
+
+    <!-- 用户专属透明通道立绘 (仅在无 3D/2.5D 模型时呈现) -->
     <div
-      v-show="!hasLive2DModel"
+      v-show="!hasLive2DModel && !hasLivLivModel"
       class="gemini-mascot"
       :style="{ transform: 'scale(' + (scale || 1.0) + ')' }"
     >
@@ -87,6 +95,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import * as PIXI from 'pixi.js';
+import { Player as LivLivPlayer } from '@livliv-dev/player';
 
 const props = withDefaults(defineProps<{
   mouthOpenY: number;
@@ -106,6 +115,17 @@ const props = withDefaults(defineProps<{
 });
 
 const viewportRef = ref<HTMLDivElement | null>(null);
+const livlivCanvasRef = ref<HTMLCanvasElement | null>(null);
+const hasLivLivModel = ref(false);
+const livlivCharName = ref('奈奈 (Nana) · 2.5D 旗舰看板娘');
+let livlivInstance: any = null;
+
+const currentCharacterName = computed(() => {
+  if (hasLivLivModel.value) return livlivCharName.value;
+  if (hasLive2DModel.value) return '雫酱 (Shizuku)';
+  return 'Gemini娘';
+});
+
 const hasLive2DModel = ref(false);
 const mascotUrl = '/models/gemini/gemini_chan_model_pack/02_透明通道立绘_直播姬已接入.webp';
 const MODEL_CANDIDATES = [
@@ -183,99 +203,127 @@ onMounted(async () => {
 
   if (!viewportRef.value) return;
 
-  // 寻找首个可用的 Live2D 模型（优先 Shizuku 雫酱 / Haru 动作丰富模型）
-  let chosenModelUrl = '';
-  for (const url of MODEL_CANDIDATES) {
-    if (await modelExists(url)) {
-      chosenModelUrl = url;
-      break;
-    }
-  }
-
-  if (!chosenModelUrl) {
-    hasLive2DModel.value = false;
-    return;
-  }
-
-  (window as any).PIXI = PIXI;
-  try {
-    app = new PIXI.Application({
-      width: 520,
-      height: 680,
-      backgroundAlpha: 0,
-      resolution: window.devicePixelRatio || 1,
-      autoDensity: true,
-    });
-    viewportRef.value.appendChild(app.view as HTMLCanvasElement);
-
-    const { Live2DModel } = await import('pixi-live2d-display');
-    Live2DModel.registerTicker(PIXI.Ticker);
-
-    currentModel = await Live2DModel.from(chosenModelUrl);
-    currentModel.anchor.set(0.5, 0.5);
-    currentModel.x = 260;
-    currentModel.y = 420;
-
-    // 模型特异性比例校准
-    if (chosenModelUrl.includes('haru')) {
-      currentBaseScale = 0.18;
-    } else if (chosenModelUrl.includes('shizuku')) {
-      currentBaseScale = 0.24;
-    } else {
-      currentBaseScale = 0.20;
-    }
-    currentModel.scale.set((props.scale || 1.0) * currentBaseScale);
-
-    // 适配 PixiJS v7 事件机制，关闭旧版 interactionManager 自动绑定避免 t.on 异常
-    currentModel.autoInteract = false;
-    currentModel.interactive = true;
-    currentModel.on('hit', (hitAreas: string[]) => {
-      try {
-        if (hitAreas.includes('body')) {
-          currentModel.motion('tap_body');
-        } else if (hitAreas.includes('head')) {
-          currentModel.motion('flick_head');
-        }
-      } catch (e) {}
-    });
-
-    app.stage.addChild(currentModel);
-    hasLive2DModel.value = true;
-
-    // 默认开启呼吸与闲适姿态
+  // 1. 优先尝试初始化 LivLiv 2.5D 精品模型（旗舰看板娘 Nana d03ft / 鲸鱼娘 p01）
+  if (livlivCanvasRef.value && typeof LivLivPlayer.isSupported === 'function' && LivLivPlayer.isSupported()) {
     try {
-      currentModel.motion('idle');
-    } catch (e) {}
+      livlivInstance = new LivLivPlayer(livlivCanvasRef.value, {
+        idle: true,
+        followPointer: 'page',
+        maxPixelRatio: 1.5,
+        autoplay: true
+      });
+      // 加载官方精细版双马尾看板娘 Nana (带头部旋转关键帧与头发重力摇摆)
+      await livlivInstance.load('/models/livliv/d03ft.livliv');
+      hasLivLivModel.value = true;
+      livlivCharName.value = '奈奈 (Nana) · 2.5D 旗舰看板娘';
+    } catch (e) {
+      console.warn('LivLiv 模型加载失败，降级 Live2D:', e);
+      hasLivLivModel.value = false;
+    }
+  }
 
-    // 每一帧统一驱动口型振幅，丝滑匹配 Cubism 2 / Cubism 4
-    app.ticker.add(() => {
-      if (currentModel && currentModel.internalModel) {
-        const core = currentModel.internalModel.coreModel;
-        if (core) {
-          const mouthVal = Math.max(0, Math.min(1.0, (props.mouthOpenY || 0) * 1.5));
-          if (typeof core.setParamFloat === 'function') {
-            // Cubism 2 (Shizuku, Haru)
-            core.setParamFloat('PARAM_MOUTH_OPEN_Y', mouthVal);
-          } else if (typeof core.setParameterValueById === 'function') {
-            // Cubism 4
-            core.setParameterValueById('ParamMouthOpenY', mouthVal);
+  // 2. 如果 LivLiv 未启动，降级寻找首个可用的 Live2D 模型
+  if (!hasLivLivModel.value) {
+    let chosenModelUrl = '';
+    for (const url of MODEL_CANDIDATES) {
+      if (await modelExists(url)) {
+        chosenModelUrl = url;
+        break;
+      }
+    }
+
+    if (!chosenModelUrl) {
+      hasLive2DModel.value = false;
+      return;
+    }
+
+    (window as any).PIXI = PIXI;
+    try {
+      app = new PIXI.Application({
+        width: 520,
+        height: 680,
+        backgroundAlpha: 0,
+        resolution: window.devicePixelRatio || 1,
+        autoDensity: true,
+      });
+      viewportRef.value.appendChild(app.view as HTMLCanvasElement);
+
+      const { Live2DModel } = await import('pixi-live2d-display');
+      Live2DModel.registerTicker(PIXI.Ticker);
+
+      currentModel = await Live2DModel.from(chosenModelUrl);
+      currentModel.anchor.set(0.5, 0.5);
+      currentModel.x = 260;
+      currentModel.y = 420;
+
+      // 模型特异性比例校准
+      if (chosenModelUrl.includes('haru')) {
+        currentBaseScale = 0.18;
+      } else if (chosenModelUrl.includes('shizuku')) {
+        currentBaseScale = 0.24;
+      } else {
+        currentBaseScale = 0.20;
+      }
+      currentModel.scale.set((props.scale || 1.0) * currentBaseScale);
+
+      currentModel.autoInteract = false;
+      currentModel.interactive = true;
+      currentModel.on('hit', (hitAreas: string[]) => {
+        try {
+          if (hitAreas.includes('body')) {
+            currentModel.motion('tap_body');
+          } else if (hitAreas.includes('head')) {
+            currentModel.motion('flick_head');
+          }
+        } catch (e) {}
+      });
+
+      app.stage.addChild(currentModel);
+      hasLive2DModel.value = true;
+
+      try {
+        currentModel.motion('idle');
+      } catch (e) {}
+
+      app.ticker.add(() => {
+        if (currentModel && currentModel.internalModel) {
+          const core = currentModel.internalModel.coreModel;
+          if (core) {
+            const mouthVal = Math.max(0, Math.min(1.0, (props.mouthOpenY || 0) * 1.5));
+            if (typeof core.setParamFloat === 'function') {
+              core.setParamFloat('PARAM_MOUTH_OPEN_Y', mouthVal);
+            } else if (typeof core.setParameterValueById === 'function') {
+              core.setParameterValueById('ParamMouthOpenY', mouthVal);
+            }
           }
         }
-      }
-    });
-  } catch (err) {
-    console.warn('Live2D 初始化异常，降级至拟态 2D 立绘模式:', err);
-    hasLive2DModel.value = false;
+      });
+    } catch (err) {
+      console.warn('Live2D 初始化异常，降级至拟态 2D 立绘模式:', err);
+      hasLive2DModel.value = false;
+    }
   }
 });
 
 onUnmounted(() => {
   if (blinkTimer) clearTimeout(blinkTimer);
   if (tiltTimer) clearTimeout(tiltTimer);
+  if (livlivInstance) {
+    try {
+      livlivInstance.autoplay = false;
+    } catch (e) {}
+    livlivInstance = null;
+  }
   if (app) {
     try {
       app.destroy(true, { children: true, texture: true, baseTexture: true });
     } catch (e) {}
+  }
+});
+
+watch(() => props.mouthOpenY, (val) => {
+  if (livlivInstance?.params) {
+    livlivInstance.params.mouthOpen = Math.max(0, Math.min(1.0, (val || 0) * 1.5));
   }
 });
 
@@ -287,6 +335,13 @@ watch(() => props.scale, (s) => {
 
 // 监听 AI 说话时传递的动作与微表情
 watch(() => props.motion, (newMotion) => {
+  if (livlivInstance) {
+    try {
+      if (newMotion === 'Happy' || newMotion === 'Wave') livlivInstance.act('nod');
+      else if (newMotion === 'Shy' || newMotion === 'Shake') livlivInstance.act('shake');
+      else if (newMotion === 'Think' || newMotion === 'Tilt') livlivInstance.act('tilt');
+    } catch (e) {}
+  }
   if (!currentModel) return;
   try {
     if (newMotion === 'Happy' || newMotion === 'Wave') {
@@ -302,6 +357,19 @@ watch(() => props.motion, (newMotion) => {
 });
 
 watch(() => props.expression, (newExp) => {
+  if (livlivInstance) {
+    try {
+      if (newExp === 'smile' || isHappyEmotion.value) {
+        livlivInstance.setExpression('smile');
+      } else if (newExp === 'blush' || newExp === 'shy') {
+        livlivInstance.setExpression('shy');
+      } else if (newExp === 'think' || isThinkingEmotion.value) {
+        livlivInstance.act('tilt');
+      } else {
+        livlivInstance.setExpression(null);
+      }
+    } catch (e) {}
+  }
   if (!currentModel) return;
   try {
     if (newExp === 'smile') {
@@ -317,6 +385,17 @@ watch(() => props.expression, (newExp) => {
 });
 
 watch(() => props.isSpeaking, (speaking) => {
+  if (livlivInstance) {
+    if (speaking) {
+      livlivInstance.act('nod');
+    } else {
+      setTimeout(() => {
+        try {
+          livlivInstance?.setExpression(null);
+        } catch (e) {}
+      }, 1500);
+    }
+  }
   if (!speaking && currentModel) {
     setTimeout(() => {
       try {
@@ -338,6 +417,19 @@ watch(() => props.isSpeaking, (speaking) => {
   align-items: center;
   pointer-events: none;
   user-select: none;
+}
+
+/* LivLiv 2.5D 精美角色画布 (WebGL2) */
+.livliv-stage-canvas {
+  position: absolute;
+  bottom: 0px;
+  left: 50%;
+  transform-origin: bottom center;
+  transform: translateX(-50%);
+  width: 520px;
+  height: 680px;
+  z-index: 10;
+  pointer-events: auto;
 }
 
 /* 全息投影舞台地台 (解决立绘悬空太空旷) */

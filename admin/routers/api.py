@@ -1,6 +1,6 @@
 import os
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
 import time
@@ -130,7 +130,7 @@ async def api_get_playlist(id: Optional[int] = None):
     return {"status": "ok", "playlist": tracks}
 
 @router.get("/api/music/lyric")
-async def api_get_lyric(id: int):
+async def api_get_lyric(id: Union[int, str]):
     lyric = await fetch_netease_lyric(id)
     return {"status": "ok", "lyric": lyric}
 
